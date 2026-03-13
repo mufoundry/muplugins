@@ -175,10 +175,10 @@ class Core(BasePlugin):
 
         return {"auth": LoginParser, "user": UserParser, "pc": PCParser}
 
-    def portal_services(self) -> dict[str, type]:
-        from .portal_services.connection import ConnectionService
+    def portal_classes(self) -> dict[str, type]:
+        from .connection import CoreConnection
 
-        return {"connection": ConnectionService}
+        return {"connection": CoreConnection}
 
     async def setup_final(self):
         self.app.fastapi_instance.state.core = self

@@ -14,11 +14,19 @@ class CoreConnection(BaseConnection):
     The Core Connection adds JWT functionality but not much more.
     """
 
-    def __init__(self, service, link):
-        super().__init__(service, link)
+    def __init__(self, app, link):
+        super().__init__(app, link)
         self.jwt = None
         self.payload = None
         self.refresh_token = None
+
+    @property
+    def core(self):
+        return self.app.plugins["core"]
+
+    @property
+    def jwt_manager(self):
+        return self.core.jwt_manager
 
     def get_headers(self) -> dict:
         out = super().get_headers()
@@ -28,12 +36,12 @@ class CoreConnection(BaseConnection):
 
     async def handle_token(self, token: TokenResponse):
         self.jwt = token.access_token
-        self.payload = jwt.decode(self.jwt, options={"verify_signature": False})
+        self.payload = self.jwt_manager.decode_token(self.jwt)
         self.refresh_token = token.refresh_token
 
     async def handle_login(self, token: TokenResponse):
         await self.handle_token(token)
-        parser_class = muforge.CLASSES["user_parser"]
+        parser_class = self.app.parsers["user"]
 
         up = parser_class()
         await self.push_parser(up)
@@ -55,7 +63,7 @@ class CoreConnection(BaseConnection):
                     # this is bad. we somehow missed the expiry time.
                     # we should probably log this and then cancel the connection.
                     await self.send_line(
-                        "Your session has expired. Please log in again."
+                        "Your session has unrecoverably expired. Please log in again."
                     )
                     self.shutdown_cause = "session_expired"
                     self.shutdown_event.set()
@@ -74,7 +82,7 @@ class CoreConnection(BaseConnection):
                     )
                 except HTTPStatusError as e:
                     await self.send_line(
-                        "Your session has expired. Please log in again."
+                        "Your session has unrecoverably expired. Please log in again."
                     )
                     self.shutdown_cause = "session_expired"
                     self.shutdown_event.set()

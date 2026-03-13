@@ -48,12 +48,3 @@ nosetests.xml
 
 # Visual Studio
 # .vscode
-
-# Obviously don't git logs....
-project_template/logs/*.log
-
-*.pem
-
-netrhost.db.flat
-
-test.py

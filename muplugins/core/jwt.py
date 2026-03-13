@@ -35,3 +35,10 @@ class JWTManager:
             + timedelta(minutes=self.jwt_settings["refresh_expire_minutes"]),
             True,
         )
+
+    def decode_token(self, token: str):
+        return jwt.decode(
+            token,
+            self.jwt_settings["secret"],
+            algorithms=[self.jwt_settings["algorithm"]],
+        )

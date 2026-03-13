@@ -1,10 +1,12 @@
 from collections import defaultdict
-from .base import Command
-from muforge.shared.events.messages import ColumnMessage
-from muforge.shared.utils import partial_match
+
+from muforge.utils.misc import partial_match
+
+from ..events.messages import RichColumns
+from .base import BaseCommand
 
 
-class Help(Command):
+class Help(BaseCommand):
     """
     Displays the help menu. You're looking at it right now!
 
@@ -13,7 +15,9 @@ class Help(Command):
             Display the full help menu.
         help <topic>
             Display help for a specific topic. Usually these are commands.
-    
+        help <topic>/<subtopic>
+            Display help for a specific subtopic.
+
     Helpful Notes:
         In help files, you will notice sections of text enclosed in <> and [].
         [] means this section is optional, while <> means it's a placeholder
@@ -28,6 +32,7 @@ class Help(Command):
             help
             help think
     """
+
     name = "help"
     help_category = "System"
 
@@ -51,7 +56,7 @@ class Help(Command):
             categories[command.help_category].append(command)
 
         category_keys = sorted(categories.keys())
-        column_message = ColumnMessage()
+        column_message = RichColumns()
 
         for key in category_keys:
             commands = categories[key]

@@ -1,12 +1,12 @@
+import datetime
 import typing
 import uuid
 
+import muforge
 import pydantic
 from asyncpg import Connection
 from asyncpg.exceptions import UniqueViolationError
 from fastapi import HTTPException, status
-
-import muforge
 
 from .fields import pc_name
 from .mixins import SoftDeleteMixin
@@ -17,6 +17,7 @@ class PCModel(SoftDeleteMixin):
     id: uuid.UUID
     user_id: uuid.UUID
     name: pc_name
+    last_active_at: datetime.datetime | None
 
 
 class CharacterCreate(pydantic.BaseModel):

@@ -158,8 +158,7 @@ class MudTelnetProtocol:
         self.linked = True
 
         app = self.plugin.app
-        service = app.services["connection"]
-        await service.pending_links.put(self.link)
+        await app.pending_links.put(self.link)
 
         while msg := await self.link.outgoing_queue.get():
             match msg:

@@ -1,13 +1,13 @@
 from httpx import HTTPStatusError
-from muforge.portal.connections.parser import BaseParser
 from muforge.utils.misc import partial_match
 
 from ..commands.base import CMD_MATCH
 from ..db.pcs import PCModel
 from ..db.users import UserModel
+from .base import CoreParser
 
 
-class UserParser(BaseParser):
+class UserParser(CoreParser):
     """
     Implements the character selection and user management features.
     """
@@ -74,7 +74,7 @@ class UserParser(BaseParser):
         user_id = self.connection.payload.get("sub")
         character_data = await self.api_call("GET", f"/v1/users/{user_id}/characters")
 
-        characters = [CharacterModel(**c) for c in character_data]
+        characters = [PCModel(**c) for c in character_data]
 
         character_table = self.make_table("Name", "Last Active", title="Characters")
         for character in characters:

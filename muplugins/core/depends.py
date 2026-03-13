@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 
-from .db.pcs import ActiveAs
+from .db.pcs import ActiveAs, find_pc_id
 from .db.users import UserModel
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/v1/auth/login")
@@ -44,10 +44,14 @@ async def get_current_user(
     return UserModel(**user)
 
 
-async def get_acting_character(user: UserModel, character_id: uuid.UUID) -> ActiveAs:
-    character = await pcs_db.find_pc_id(character_id)
+async def get_acting_pc(
+    request: Request, user: UserModel, character_id: uuid.UUID
+) -> ActiveAs:
+    db = request.app.state.core.db
+    async with db.connection() as conn:
+        character = await find_pc_id(conn, character_id)
     if character.user_id != user.id:
         raise HTTPException(status_code=403, detail="Character does not belong to you.")
 
-    act = ActiveAs(user=user, character=character)
+    act = ActiveAs(user=user, pc=character)
     return act

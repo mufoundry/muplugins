@@ -1,10 +1,9 @@
 import re
 
 import lark
-from rich.markup import MarkupError
-from rich.text import Text
-
 import muforge
+from rich.errors import MarkupError
+from rich.text import Text
 
 
 class NameSanitizer:

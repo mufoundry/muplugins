@@ -1,6 +1,9 @@
 import re
 import typing
 
+from muplugins.core.db.pcs import ActiveAs, PCModel
+from muplugins.core.db.users import UserModel
+
 CMD_MATCH = re.compile(
     r"(?s)^(?P<cmd>\S+?)(?:/(?P<switches>\S+)?)?(?P<fullargs> +(?P<args>(?P<lsargs>.+?)(?:=(?P<rsargs>.*))?)?)?$"
 )
@@ -28,7 +31,7 @@ class BaseCommand:
         pass
 
     @classmethod
-    def check_match(cls, enactor: "ActingAs", command: str) -> typing.Optional[str]:
+    def check_match(cls, enactor: ActiveAs, command: str) -> typing.Optional[str]:
         """
         Check if the command matches the user's input.
 
@@ -50,7 +53,7 @@ class BaseCommand:
         return None
 
     @classmethod
-    def check_access(cls, enactor: "ActingAs") -> bool:
+    def check_access(cls, enactor: ActiveAs) -> bool:
         """
         Check if the user should have access to the command.
         If they don't, they don't see it at all.
@@ -63,7 +66,13 @@ class BaseCommand:
         """
         return True
 
-    def __init__(self, match_cmd, match_data: dict[str, str]):
+    def __init__(
+        self,
+        connection: "CoreConnection",
+        match_cmd: str,
+        match_data: dict[str, str],
+    ):
+        self.connection = connection
         self.match_cmd = match_cmd
         self.match_data = match_data
         self.cmd = match_data.get("cmd", "")
@@ -73,6 +82,18 @@ class BaseCommand:
         self.lsargs = match_data.get("lsargs", "").strip()
         self.rsargs = match_data.get("rsargs", "").strip()
         self.args_array = self.args.split()
+
+    @property
+    def enactor(self) -> ActiveAs:
+        return self.connection.enactor
+
+    @property
+    def user(self) -> UserModel:
+        return self.enactor.user
+
+    @property
+    def pc(self) -> PCModel:
+        return self.enactor.pc
 
     def can_execute(self) -> bool:
         """
@@ -106,7 +127,10 @@ class BaseCommand:
         pass
 
     async def send_text(self, text: str):
-        pass
+        await self.connection.send_text(text)
 
     async def send_line(self, text: str):
-        await self.send_text(text + "\r\n" if not text.endswith("\r\n") else text)
+        await self.connection.send_line(text)
+
+    async def send_data(self, package: str, data):
+        await self.connection.send_data(package, data)

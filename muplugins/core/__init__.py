@@ -2,6 +2,7 @@ import typing
 import uuid
 from collections import defaultdict
 from pathlib import Path
+from this import d
 
 import asyncpg
 import orjson
@@ -11,6 +12,7 @@ from muforge.plugin import BasePlugin
 
 from .database import INIT_SQL, Database
 from .jwt import JWTManager
+from .sessions import Session
 
 
 def decode_json(data: bytes):
@@ -121,12 +123,14 @@ class Core(BasePlugin):
         super().__init__(app, settings)
         self.crypt_context = None
         self.db = None
-        self.active_sessions: dict[uuid.UUID, typing.Any] = dict()
+        self.active_sessions: dict[uuid.UUID, Session] = dict()
         self.commands: dict[str, type] = dict()
         self.commands_priority: dict[int, list[type]] = defaultdict(list)
         self.lockparser = None
         self.lockfuncs: dict[str, typing.Awaitable] = dict()
         self.jwt_manager = None
+        self.events: dict[str, type] = dict()
+        self.events_reversed: dict[type, str] = dict()
 
     def name(self) -> str:
         return "MuForge Core"
@@ -168,6 +172,11 @@ class Core(BasePlugin):
     def game_lockfuncs(self) -> dict[str, typing.Any]:
         return dict()
 
+    def game_services(self) -> dict[str, type]:
+        from .game_services.pinger import SystemPinger
+
+        return {"system_pinger": SystemPinger}
+
     def portal_parsers(self) -> dict[str, type]:
         from .portal_parsers.auth import LoginParser
         from .portal_parsers.pc import PCParser
@@ -175,10 +184,33 @@ class Core(BasePlugin):
 
         return {"auth": LoginParser, "user": UserParser, "pc": PCParser}
 
+    def game_classes(self) -> dict[str, type]:
+        from .sessions import Session
+
+        return {"session": Session}
+
     def portal_classes(self) -> dict[str, type]:
         from .connection import CoreConnection
 
         return {"connection": CoreConnection}
+
+    def core_events(self) -> dict[str, type]:
+        from .events.messages import RichColumns, RichText
+        from .events.system import SystemPing
+
+        return {
+            "system.ping": SystemPing,
+            "rich.text": RichText,
+            "rich.columns": RichColumns,
+        }
+
+    async def setup_events(self):
+        for p in self.app.plugin_load_order:
+            if not hasattr(p, "core_events"):
+                continue
+            self.events.update(p.core_events())
+        for k, v in self.events.items():
+            self.events_reversed[v] = k
 
     async def setup_final(self):
         self.app.fastapi_instance.state.core = self
@@ -186,7 +218,8 @@ class Core(BasePlugin):
         await self.setup_crypt()
         await self.setup_database()
         await self.setup_lockfuncs()
-        # await self.setup_commands()
+        await self.setup_commands()
+        await self.setup_events()
 
     async def setup_crypt(self):
         from passlib.context import CryptContext
@@ -211,12 +244,20 @@ class Core(BasePlugin):
         for p in self.app.plugin_load_order:
             self.lockfuncs.update(p.game_lockfuncs())
 
+    def portal_commands(self) -> list["BaseCommand"]:
+        from .commands.help import Help
+
+        return [Help]
+
     async def setup_commands(self):
-        for p in self.plugin_load_order:
-            for k, v in p.game_commands().items():
-                for key, command in callables_from_module(v).items():
-                    self.commands[command.key] = command
-                    self.commands_priority[command.priority].append(command)
+        for p in self.app.plugin_load_order:
+            if not hasattr(p, "portal_commands"):
+                continue
+            for command in p.portal_commands():
+                self.commands[command.key] = command
+                self.commands_priority[command.priority].append(command)
+        for v in self.commands_priority.values():
+            v.sort(key=lambda c: c.key)
 
 
 __all__ = ["Core"]

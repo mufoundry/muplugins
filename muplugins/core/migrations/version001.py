@@ -149,6 +149,29 @@ CREATE INDEX idx_pc_events__event_type ON pc_events (event_type);
 CREATE INDEX idx_pc_events__event_type_gist ON pc_events USING GIST (event_type);
 CREATE INDEX idx_pc_events__created_at ON pc_events (created_at);
 
+CREATE OR REPLACE FUNCTION notify_pc_events() RETURNS trigger AS $$
+DECLARE
+    payload json;
+BEGIN
+    payload = json_build_object(
+        'table', 'pc_events',
+        'operation', TG_OP,
+        'event_id', NEW.event_id,
+        'pc_id', NEW.pc_id,
+        'event_type', NEW.event_type::text,
+        'created_at', NEW.created_at,
+        'data', NEW.data
+    );
+    PERFORM pg_notify('table_changes', payload::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_pc_events_notify
+AFTER INSERT ON pc_events
+FOR EACH ROW
+EXECUTE FUNCTION notify_pc_events();
+
 CREATE TABLE actduo (
     id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,

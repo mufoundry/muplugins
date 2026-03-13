@@ -2,17 +2,17 @@ import typing
 import uuid
 from typing import Annotated
 
+import muforge
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-
-import muforge
 from muforge.utils.responses import streaming_list
+from pydantic import BaseModel
 
 from ..db import pcs as pcs_db
 from ..db.pcs import ActiveAs, CharacterCreate, PCModel
 from ..db.users import UserModel
-from ..depends import get_current_user
+from ..depends import get_acting_pc, get_current_user
+from ..events.base import EventBase
 
 router = APIRouter()
 
@@ -59,22 +59,25 @@ async def get_pc_active_as(
     user: Annotated[UserModel, Depends(get_current_user)],
     pc_id: uuid.UUID,
 ):
-    acting = await get_acting_pc(user, pc_id)
+    acting = await get_acting_pc(request, user, pc_id)
     return acting
 
 
 @router.get("/{character_id}/events")
 async def stream_character_events(
-    user: Annotated[UserModel, Depends(get_current_user)], character_id: uuid.UUID
+    request: Request,
+    user: Annotated[UserModel, Depends(get_current_user)],
+    character_id: uuid.UUID,
 ):
     # We don't use it; but this verifies that user can control character.
-    acting = await get_acting_pc(user, character_id)
+    acting = await get_acting_pc(request, user, character_id)
+    core = request.app.state.core
 
     started = False
-    if not (session := muforge.PC_SESSIONS.get(character_id, None)):
-        session_class = muforge.CLASSES["pc_session"]
-        session = session_class(acting)
-        muforge.PC_SESSIONS[character_id] = session
+    if not (session := core.active_sessions.get(character_id, None)):
+        session_class = core.app.classes["session"]
+        session = session_class(core, acting)
+        core.active_sessions[character_id] = session
         started = True
 
     async def event_generator():
@@ -85,7 +88,9 @@ async def stream_character_events(
                 await session.start()
             # blocks until a new event
             while item := await queue.get():
-                yield f"event: {item.__class__.__name__}\ndata: {item.model_dump_json()}\n\n"
+                ev_class = item.__class__
+                ev_name = core.events_reversed.get(ev_class)
+                yield f"event: {ev_name}\ndata: {item.model_dump_json()}\n\n"
             graceful = True
         finally:
             session.unsubscribe(queue)
@@ -101,16 +106,19 @@ class CommandSubmission(BaseModel):
 
 @router.post("/{character_id}/command")
 async def submit_command(
+    request: Request,
     user: Annotated[UserModel, Depends(get_current_user)],
     character_id: uuid.UUID,
     command: Annotated[CommandSubmission, Body()],
 ):
+    core = request.app.state.core
+
     if character_id not in user.characters:
         raise HTTPException(
             status_code=403, detail="You do not have permission to use this character."
         )
 
-    if not (session := muforge.SESSIONS.get(character_id, None)):
+    if not (session := core.active_sessions.get(character_id, None)):
         raise HTTPException(status_code=404, detail="Character entity not found.")
 
     await session.execute_command(command.command)
@@ -120,8 +128,13 @@ async def submit_command(
 
 @router.post("/", response_model=PCModel)
 async def create_character(
+    request: Request,
     user: Annotated[UserModel, Depends(get_current_user)],
     char_data: Annotated[CharacterCreate, Body()],
 ):
-    result = await pcs_db.create_pc(user, char_data.name)
+    core = request.app.state.core
+    db = core.db
+
+    async with db.transaction() as conn:
+        result = await pcs_db.create_pc(conn, user, char_data.name)
     return result

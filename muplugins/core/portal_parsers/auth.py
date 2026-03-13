@@ -1,13 +1,13 @@
 from httpx import HTTPStatusError
-from muforge.portal.connections.parser import BaseParser
 from pydantic import ValidationError
 
 from ..commands.base import CMD_MATCH
 from ..db.validators import user_rich_text
 from ..routers.auth import TokenResponse, UserLogin
+from .base import CoreParser
 
 
-class LoginParser(BaseParser):
+class LoginParser(CoreParser):
     """
     Implements the login menu. User registration and authentication, etc.
     """

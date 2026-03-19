@@ -136,6 +136,18 @@ CREATE TABLE pc_sessions (
 CREATE VIEW pcs_active AS
 SELECT p.*,s.created_at as active_at FROM pc_sessions AS s LEFT JOIN pcs_with_user AS p ON s.pc_id=p.id;
 
+CREATE TABLE pc_subscriptions (
+    id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
+    pc_id UUID NOT NULL REFERENCES pcs(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ip_address INET      NOT NULL,
+    user_agent TEXT NOT NULL
+);
+
+CREATE INDEX idx_pc_subscriptions__pc_id ON pc_subscriptions (pc_id);
+CREATE INDEX idx_pc_subscriptions__user_id ON pc_subscriptions (user_id);
+
 CREATE TABLE pc_events (
     event_id BIGSERIAL NOT NULL PRIMARY KEY,
     pc_id UUID NOT NULL REFERENCES pcs(id) ON DELETE CASCADE,

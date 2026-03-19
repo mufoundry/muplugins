@@ -2,7 +2,6 @@ import typing
 import uuid
 from collections import defaultdict
 from pathlib import Path
-from this import d
 
 import asyncpg
 import orjson

@@ -18,10 +18,12 @@ class PCModel(SoftDeleteMixin):
     user_id: uuid.UUID
     name: pc_name
     last_active_at: datetime.datetime | None
+    data: dict | None = None
 
 
 class CharacterCreate(pydantic.BaseModel):
     name: pc_name
+    data: dict | None = None
 
 
 class ActiveAs(pydantic.BaseModel):
@@ -68,10 +70,10 @@ async def list_pcs_user(
         yield PCModel(**row)
 
 
-async def create_pc(conn: Connection, user: UserModel, name: str) -> PCModel:
-    query = "INSERT INTO pcs (name, user_id) VALUES ($1, $2) RETURNING *"
+async def create_pc(conn: Connection, user: UserModel, character: CharacterCreate) -> PCModel:
+    query = "INSERT INTO pcs (name, user_id, data) VALUES ($1, $2, $3) RETURNING *"
     try:
-        row = await conn.fetchrow(query, name, user.id)
+        row = await conn.fetchrow(query, character.name, user.id)
     except UniqueViolationError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

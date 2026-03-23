@@ -174,7 +174,7 @@ BEGIN
         'created_at', NEW.created_at,
         'data', NEW.data
     );
-    PERFORM pg_notify('table_changes', payload::text);
+    PERFORM pg_notify('pc_events', payload::text);
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

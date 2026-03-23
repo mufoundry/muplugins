@@ -28,14 +28,18 @@ async def handle_login(request: Request, username: str, password: str) -> TokenR
 
 @router.post("/register", response_model=TokenResponse)
 async def register(request: Request, data: Annotated[UserLogin, Body()]):
-    crypt_context = request.app.state.core.crypt_context
-    db = request.app.state.core.db
-    jwt_manager = request.app.state.core.jwt_manager
+    app = request.app.state.app
+    core = request.app.state.core
+    crypt_context = core.crypt_context
+    db = core.db
+    jwt_manager = core.jwt_manager
 
     async with db.transaction() as conn:
         user = await auth_db.register_user(
             conn, crypt_context, data.username, data.password.get_secret_value()
         )
+        for hook in app.hooks.get("auth.register", []):
+            await hook(user)
     token = TokenResponse.from_uuid(jwt_manager, user.id)
     return token
 

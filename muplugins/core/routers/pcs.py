@@ -2,7 +2,6 @@ import typing
 import uuid
 from typing import Annotated
 
-import muforge
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from muforge.utils.responses import streaming_list
@@ -73,18 +72,18 @@ async def stream_character_events(
     acting = await get_acting_pc(request, user, character_id)
     core = request.app.state.core
 
-    started = False
+    should_start = False
     if not (session := core.active_sessions.get(character_id, None)):
         session_class = core.app.classes["session"]
         session = session_class(core, acting)
         core.active_sessions[character_id] = session
-        started = True
+        should_start = True
 
     async def event_generator():
-        queue = session.subscribe()
+        id, queue = await session.subscribe()
         graceful = False
         try:
-            if started:
+            if should_start:
                 await session.start()
             # blocks until a new event
             while item := await queue.get():
@@ -93,7 +92,7 @@ async def stream_character_events(
                 yield f"event: {ev_name}\ndata: {item.model_dump_json()}\n\n"
             graceful = True
         finally:
-            session.unsubscribe(queue)
+            await session.unsubscribe(id)
             if not session.subscriptions and session.active:
                 await session.stop(graceful=graceful)
 
@@ -132,9 +131,20 @@ async def create_character(
     user: Annotated[UserModel, Depends(get_current_user)],
     char_data: Annotated[CharacterCreate, Body()],
 ):
+    app = request.app.state.app
     core = request.app.state.core
     db = core.db
 
-    async with db.transaction() as conn:
-        result = await pcs_db.create_pc(conn, user, char_data.name)
+    # This override is provided for plugins that want to handle character 
+    # creation themselves, such as to add custom data or trigger 
+    # custom events.
+    if (hooks := core.app.hooks.get("pc.create.override", [])):
+        result = None
+        for hook in hooks:
+            result = await hook(app, db, user, char_data, result)
+    else:
+        async with db.transaction() as conn:
+            result = await pcs_db.create_pc(conn, user, char_data.name)
+            for hook in core.app.hooks.get("pc.create", []):
+                await hook(app, conn, result)
     return result

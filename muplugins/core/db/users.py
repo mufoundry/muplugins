@@ -13,6 +13,7 @@ class UserModel(SoftDeleteMixin):
     id: uuid.UUID
     username: username
     admin_level: int
+    data: dict | None = None
 
 
 async def get_user(conn: Connection, user_id: uuid.UUID) -> UserModel:

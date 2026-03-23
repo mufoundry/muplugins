@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import uuid
 
 import orjson
 
@@ -9,7 +10,7 @@ from .events.base import EventBase
 
 class Session:
     __slots__ = (
-        "core",
+        "request",
         "actingactive",
         "created_at",
         "last_active_at",
@@ -19,20 +20,24 @@ class Session:
         "shutdown_event",
     )
 
-    def __init__(self, core, acting: ActiveAs):
-        self.core = core
+    def __init__(self, request, acting: ActiveAs):
+        self.request = request
         self.acting = acting
         # User and PC are filled in after the session is created.
         self.created_at = datetime.now(timezone.utc)
         self.last_active_at = datetime.now(timezone.utc)
-        self.subscriptions: list[asyncio.Queue] = []
+        self.subscriptions: dict[uuid.UUID, asyncio.Queue] = {}
         self.active = False
         self.task_group = None
         self.shutdown_event = asyncio.Event()
 
     @property
     def app(self):
-        return self.core.app
+        return self.request.app.state.app
+
+    @property
+    def core(self):
+        return self.request.app.state.core
 
     @property
     def user(self):
@@ -41,27 +46,36 @@ class Session:
     @property
     def pc(self):
         return self.acting.pc
+    
+    @property
+    def db(self):
+        return self.core.db
 
     async def send_event(self, event: EventBase) -> None:
-        for q in self.subscriptions:
+        for q in self.subscriptions.values():
             await q.put(event)
 
     def send_event_nowait(self, event: EventBase) -> None:
-        for q in self.subscriptions:
+        for q in self.subscriptions.values():
             q.put_nowait(event)
 
-    def subscribe(self) -> asyncio.Queue:
+    async def subscribe(self) -> tuple[uuid.UUID, asyncio.Queue]:
         """Create a new queue for this character and add it to the subscription list."""
+        async with self.db.connection() as conn:
+             row = await conn.fetchrow("""
+                INSERT INTO pc_subscriptions (pc_id, user_id, ip_address, user_agent)
+                VALUES ($1, $2, $3, $4) RETURNING id
+             """, self.pc.id, self.user.id, self.request.client.host, self.request.headers.get("User-Agent"))
         q = asyncio.Queue()
-        self.subscriptions.append(q)
-        return q
+        
+        self.subscriptions[row["id"]] = q
+        return row["id"], q
 
-    def unsubscribe(self, q: asyncio.Queue):
+    async def unsubscribe(self, id: uuid.UUID):
         """Remove the given queue from this session's subscription list."""
-        try:
-            self.subscriptions.remove(q)
-        except ValueError:
-            pass
+        self.subscriptions.pop(id, None)
+        async with self.db.connection() as conn:
+            await conn.execute("DELETE FROM pc_subscriptions WHERE id = $1", id)
 
     async def handle_postgre_notification(self, conn, pid, channel, payload):
         try:
@@ -97,7 +111,7 @@ class Session:
 
     async def listen_events(self):
         async with self.core.db.connection() as conn:
-            await conn.add_listener("table_changes", self.handle_postgre_notification)
+            await conn.add_listener("pc_events", self.handle_postgre_notification)
             # Do nothing in order to keep the listener running.
             while True:
                 try:
@@ -118,12 +132,19 @@ class Session:
 
         """
         self.active = True
-        self.core.app.task_group.create_task(self.run())
+        async with self.db.connection() as conn:
+            await conn.execute("""
+                INSERT INTO pc_sessions (pc_id) VALUES ($1)
+            """, self.pc.id)
+        self.app.task_group.create_task(self.run())
 
     async def stop_local(self):
-        for q in self.subscriptions:
+        for q in self.subscriptions.values():
             await q.put(None)
 
     async def stop(self, graceful: bool = True):
         if not self.active:
             return
+
+    async def execute_command(self, command: str):
+        pass

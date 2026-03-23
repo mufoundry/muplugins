@@ -14,8 +14,8 @@ class UserParser(CoreParser):
 
     async def on_start(self):
         await self.handle_look()
-
-    async def handle_help(self, args: str):
+    
+    def generate_help(self) -> str:
         help_table = self.make_table("Command", "Description", title="User Commands")
         help_table.add_row("help", "Displays this help message.")
         help_table.add_row("create <name>", "Creates a new character.")
@@ -23,6 +23,10 @@ class UserParser(CoreParser):
         help_table.add_row("delete <name>", "Deletes a character.")
         help_table.add_row("logout", "Logs out of the game.")
         help_table.add_row("look", "Lists all characters.")
+        return help_table
+
+    async def handle_help(self, args: str):
+        help_table = self.generate_help()
         await self.send_rich(help_table)
 
     async def handle_create(self, args: str):

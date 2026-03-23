@@ -32,7 +32,7 @@ class Help(BaseCommand):
             help
             help think
     """
-
+    key = "core/help"
     name = "help"
     help_category = "System"
 

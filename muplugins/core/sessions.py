@@ -3,15 +3,22 @@ from datetime import datetime, timezone
 import uuid
 
 import orjson
+from dataclasses import dataclass
 
 from .db.pcs import ActiveAs
 from .events.base import EventBase
+from fastapi import Request
+
+@dataclass(slots=True)
+class Subscription:
+    request: Request
+    queue: asyncio.Queue
 
 
 class Session:
     __slots__ = (
-        "request",
-        "actingactive",
+        "core",
+        "acting",
         "created_at",
         "last_active_at",
         "subscriptions",
@@ -20,24 +27,20 @@ class Session:
         "shutdown_event",
     )
 
-    def __init__(self, request, acting: ActiveAs):
-        self.request = request
+    def __init__(self, core, acting: ActiveAs):
+        self.core = core
         self.acting = acting
         # User and PC are filled in after the session is created.
         self.created_at = datetime.now(timezone.utc)
         self.last_active_at = datetime.now(timezone.utc)
-        self.subscriptions: dict[uuid.UUID, asyncio.Queue] = {}
+        self.subscriptions: dict[uuid.UUID, Subscription] = {}
         self.active = False
         self.task_group = None
         self.shutdown_event = asyncio.Event()
 
     @property
     def app(self):
-        return self.request.app.state.app
-
-    @property
-    def core(self):
-        return self.request.app.state.core
+        return self.core.app
 
     @property
     def user(self):
@@ -52,24 +55,24 @@ class Session:
         return self.core.db
 
     async def send_event(self, event: EventBase) -> None:
-        for q in self.subscriptions.values():
-            await q.put(event)
+        for sub in self.subscriptions.values():
+            await sub.queue.put(event)
 
     def send_event_nowait(self, event: EventBase) -> None:
-        for q in self.subscriptions.values():
-            q.put_nowait(event)
+        for sub in self.subscriptions.values():
+            sub.queue.put_nowait(event)
 
-    async def subscribe(self) -> tuple[uuid.UUID, asyncio.Queue]:
+    async def subscribe(self, request: Request) -> tuple[uuid.UUID, asyncio.Queue]:
         """Create a new queue for this character and add it to the subscription list."""
         async with self.db.connection() as conn:
              row = await conn.fetchrow("""
                 INSERT INTO pc_subscriptions (pc_id, user_id, ip_address, user_agent)
                 VALUES ($1, $2, $3, $4) RETURNING id
-             """, self.pc.id, self.user.id, self.request.client.host, self.request.headers.get("User-Agent"))
-        q = asyncio.Queue()
-        
-        self.subscriptions[row["id"]] = q
-        return row["id"], q
+             """, self.pc.id, self.user.id, request.client.host, request.headers.get("User-Agent"))
+
+        sub = Subscription(request, asyncio.Queue())
+        self.subscriptions[row["id"]] = sub
+        return row["id"], sub.queue
 
     async def unsubscribe(self, id: uuid.UUID):
         """Remove the given queue from this session's subscription list."""
@@ -137,10 +140,11 @@ class Session:
                 INSERT INTO pc_sessions (pc_id) VALUES ($1)
             """, self.pc.id)
         self.app.task_group.create_task(self.run())
+        await self.on_start()
 
     async def stop_local(self):
-        for q in self.subscriptions.values():
-            await q.put(None)
+        for sub in self.subscriptions.values():
+            await sub.queue.put(None)
 
     async def stop(self, graceful: bool = True):
         if not self.active:

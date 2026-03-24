@@ -138,7 +138,7 @@ SELECT p.*,s.created_at as active_at FROM pc_sessions AS s LEFT JOIN pcs_with_us
 
 CREATE TABLE pc_subscriptions (
     id UUID NOT NULL PRIMARY KEY DEFAULT gen_random_uuid(),
-    pc_id UUID NOT NULL REFERENCES pcs(id) ON DELETE CASCADE,
+    pc_id UUID NOT NULL REFERENCES pc_sessions(pc_id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     ip_address INET      NOT NULL,

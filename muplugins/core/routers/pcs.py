@@ -80,13 +80,13 @@ async def stream_character_events(
         should_start = True
 
     async def event_generator():
-        id, queue = await session.subscribe()
+        id, sub = await session.subscribe(request)
         graceful = False
         try:
             if should_start:
                 await session.start()
             # blocks until a new event
-            while item := await queue.get():
+            while item := await sub.queue.get():
                 ev_class = item.__class__
                 ev_name = core.events_reversed.get(ev_class)
                 yield f"event: {ev_name}\ndata: {item.model_dump_json()}\n\n"

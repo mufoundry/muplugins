@@ -7,25 +7,37 @@ from dataclasses import dataclass
 
 from .db.pcs import ActiveAs
 from .events.base import EventBase
-from fastapi import Request
+from .events.messages import RichTextEvent, TextEvent
 
-@dataclass(slots=True)
-class Subscription:
-    request: Request
-    queue: asyncio.Queue
+import typing
 
+if typing.TYPE_CHECKING:
+    from .session_commands.base import SessionCommand
+
+
+class SessionParser:
+    def __init__(self, session: "Session"):
+        self.session = session
+    
+    async def execute_command(self, raw: str):
+        pass
+
+    async def start(self):
+        pass
+
+    async def stop(self):
+        pass
+
+    async def cleanup(self):
+        pass
+
+    async def send_text(self, text: str):
+        await self.session.send_text(text)
+    
+    async def send_line(self, text: str):
+        await self.session.send_line(text)
 
 class Session:
-    __slots__ = (
-        "core",
-        "acting",
-        "created_at",
-        "last_active_at",
-        "subscriptions",
-        "active",
-        "task_group",
-        "shutdown_event",
-    )
 
     def __init__(self, core, acting: ActiveAs):
         self.core = core
@@ -37,6 +49,7 @@ class Session:
         self.active = False
         self.task_group = None
         self.shutdown_event = asyncio.Event()
+        self.parser_stack: list[SessionParser] = []
 
     @property
     def app(self):
@@ -53,14 +66,31 @@ class Session:
     @property
     def db(self):
         return self.core.db
+    
+    def repl_globals(self, data: dict):
+        data["session"] = self
+        data["core"] = self.core
+        data["app"] = self.app
+        data["pc"] = self.pc
+        data["user"] = self.user
 
     async def send_event(self, event: EventBase) -> None:
         for sub in self.subscriptions.values():
             await sub.queue.put(event)
 
     def send_event_nowait(self, event: EventBase) -> None:
-        for sub in self.subscriptions.values():
-            sub.queue.put_nowait(event)
+        for q in self.subscriptions:
+            q.put_nowait(event)
+    
+    async def send_text(self, text: str):
+        await self.send_event(
+            TextEvent(text=text)
+        )
+    
+    async def send_line(self, text: str):
+        if not text.endswith("\n"):
+            text += "\n"
+        await self.send_text(text)
 
     async def subscribe(self, request: Request) -> tuple[uuid.UUID, asyncio.Queue]:
         """Create a new queue for this character and add it to the subscription list."""
@@ -79,48 +109,6 @@ class Session:
         self.subscriptions.pop(id, None)
         async with self.db.connection() as conn:
             await conn.execute("DELETE FROM pc_subscriptions WHERE id = $1", id)
-
-    async def handle_postgre_notification(self, conn, pid, channel, payload):
-        try:
-            data = orjson.loads(payload)
-        except Exception:
-            return
-
-        if data.get("table") != "pc_events":
-            return
-
-        if str(data.get("pc_id")) != str(self.pc.id):
-            return
-
-        event_type = data.get("event_type")
-        if not event_type:
-            return
-
-        ev_class = self.core.events.get(event_type)
-        if not ev_class:
-            return
-
-        ev_data = data.get("data") or {}
-        if "happened_at" not in ev_data and data.get("created_at"):
-            ev_data = dict(ev_data)
-            ev_data["happened_at"] = data["created_at"]
-
-        try:
-            event = ev_class(**ev_data)
-        except Exception:
-            return
-
-        await self.send_event(event)
-
-    async def listen_events(self):
-        async with self.core.db.connection() as conn:
-            await conn.add_listener("pc_events", self.handle_postgre_notification)
-            # Do nothing in order to keep the listener running.
-            while True:
-                try:
-                    await asyncio.sleep(10)
-                except asyncio.CancelledError:
-                    break
 
     async def run(self):
         async with asyncio.TaskGroup() as tg:
@@ -150,5 +138,41 @@ class Session:
         if not self.active:
             return
 
+    async def available_commands(self):
+        priorities = sorted(list(self.core.session_commands_priority.keys()))
+        for priority in priorities:
+            for command in self.core.session_commands_priority[priority]:
+                if await command.check_access(self):
+                    yield command
+    
+    async def execute_session_command(self, command: str) -> bool:
+        for cmd in await self.available_commands():
+            if match := await command.check_match(command):
+                instance = cmd(self, command, match)
+                return await instance.execute()
+
+    async def command_passthrough(self, command: str):
+        await self.send_line(f"Unknown command: {command}")
+
     async def execute_command(self, command: str):
-        pass
+        # case 1: route to top parser. These are for menus.
+        if self.parser_stack:
+            await self.parser_stack[-1].execute_command(command)
+            return
+        
+        # case 2: it might be a session command!
+        if res := await self.execute_session_command(command):
+            return res
+        
+        # case 3: unknown command
+        # this is great for overriding!
+        await self.command_passthrough(command)
+
+    async def add_parser(self, parser: SessionParser):
+        self.parser_stack.append(parser)
+        await parser.start()
+    
+    async def pop_parser(self):
+        if self.parser_stack:
+            parser = self.parser_stack.pop()
+            await parser.stop()

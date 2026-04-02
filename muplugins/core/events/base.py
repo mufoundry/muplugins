@@ -18,3 +18,7 @@ class EventBase(pydantic.BaseModel):
 
     async def handle_event_parser(self, parser: "BaseParser"):
         pass
+
+    @classmethod
+    def event_type(cls) -> str:
+        raise NotImplementedError("Subclasses must implement event_type()")

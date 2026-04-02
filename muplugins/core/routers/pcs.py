@@ -120,8 +120,11 @@ async def submit_command(
     if not (session := core.active_sessions.get(character_id, None)):
         raise HTTPException(status_code=404, detail="Character entity not found.")
 
-    await session.execute_command(command.command)
+    res = await session.execute_command(command.command)
 
+    if isinstance(res, dict):
+        return res
+    
     return {"status": "ok"}
 
 

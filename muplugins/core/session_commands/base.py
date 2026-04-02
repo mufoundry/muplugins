@@ -4,12 +4,15 @@ import typing
 from muplugins.core.db.pcs import ActiveAs, PCModel
 from muplugins.core.db.users import UserModel
 
+if typing.TYPE_CHECKING:
+    from ..sessions import Session
+
 CMD_MATCH = re.compile(
     r"(?s)^(?P<cmd>\S+?)(?:/(?P<switches>\S+)?)?(?P<fullargs> +(?P<args>(?P<lsargs>.+?)(?:=(?P<rsargs>.*))?)?)?$"
 )
 
 
-class BaseCommand:
+class SessionCommand:
     """
     Help not implemented for this command. Contact staff!
     """
@@ -31,7 +34,7 @@ class BaseCommand:
         pass
 
     @classmethod
-    def check_match(cls, enactor: ActiveAs, command: str) -> typing.Optional[str]:
+    def check_match(cls, session: Session, command: str) -> typing.Optional[dict[str, str]]:
         """
         Check if the command matches the user's input.
 
@@ -43,17 +46,22 @@ class BaseCommand:
 
         IE: "north" should respond to "nort" but not "norb"
         """
+        match_data = CMD_MATCH.match(command)
+        if not match_data:
+            return None
+        match_dict = {k: v for k, v in match_data.groupdict().items() if v}
+        
         if command == cls.name:
-            return cls.name
+            return match_dict
         for k, v in cls.aliases.items():
             if command == k:
-                return k
+                return match_dict
             if len(command) >= v and command.startswith(k):
-                return k
+                return match_dict
         return None
 
     @classmethod
-    def check_access(cls, enactor: ActiveAs) -> bool:
+    def check_access(cls, session: Session) -> bool:
         """
         Check if the user should have access to the command.
         If they don't, they don't see it at all.
@@ -64,28 +72,21 @@ class BaseCommand:
         Returns:
             bool: True if the user has access, False otherwise.
         """
-        return True
+        return session.user.admin_level >= cls.min_level
 
     def __init__(
         self,
-        connection: "CoreConnection",
-        match_cmd: str,
-        match_data: dict[str, str],
+        session: Session,
+        raw: str,
+        parsed: dict[str, str],
     ):
-        self.connection = connection
-        self.match_cmd = match_cmd
-        self.match_data = match_data
-        self.cmd = match_data.get("cmd", "")
-        self.switches = [x.strip() for x in match_data.get("switches", "").split("/")]
-        self.fullargs = match_data.get("fullargs", "")
-        self.args = match_data.get("args", "")
-        self.lsargs = match_data.get("lsargs", "").strip()
-        self.rsargs = match_data.get("rsargs", "").strip()
-        self.args_array = self.args.split()
+        self.session = session
+        self.raw = raw
+        self.parsed = parsed
 
     @property
     def enactor(self) -> ActiveAs:
-        return self.connection.enactor
+        return self.session.acting
 
     @property
     def user(self) -> UserModel:
@@ -127,10 +128,10 @@ class BaseCommand:
         pass
 
     async def send_text(self, text: str):
-        await self.connection.send_text(text)
+        await self.session.send_text(text)
 
     async def send_line(self, text: str):
-        await self.connection.send_line(text)
+        await self.session.send_line(text)
 
     async def send_data(self, package: str, data):
-        await self.connection.send_data(package, data)
+        await self.session.send_data(package, data)

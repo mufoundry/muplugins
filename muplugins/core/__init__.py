@@ -123,11 +123,20 @@ class Core(BasePlugin):
         self.crypt_context = None
         self.db = None
         self.active_sessions: dict[uuid.UUID, Session] = dict()
-        self.commands: dict[str, type] = dict()
-        self.commands_priority: dict[int, list[type]] = defaultdict(list)
+        
+        # portal commands are only executed on the portal by telnet users.
+        self.portal_commands: dict[str, type] = dict()
+        self.portal_commands_priority: dict[int, list[type]] = defaultdict(list)
+
+        # Executed by the server, in the context of a session controlling a character.
+        # they are not necessarily executed by in-game objects.
+        self.session_commands: dict[str, type] = dict()
+        self.session_commands_priority: dict[int, list[type]] = defaultdict(list)
+
         self.lockparser = None
         self.lockfuncs: dict[str, typing.Awaitable] = dict()
         self.jwt_manager = None
+
         self.events: dict[str, type] = dict()
         self.events_reversed: dict[type, str] = dict()
 
@@ -194,14 +203,12 @@ class Core(BasePlugin):
         return {"connection": CoreConnection}
 
     def core_events(self) -> dict[str, type]:
-        from .events.messages import RichColumns, RichText
+        from .events.messages import RichColumns, RichTextEvent, TextEvent
         from .events.system import SystemPing
 
-        return {
-            "system.ping": SystemPing,
-            "rich.text": RichText,
-            "rich.columns": RichColumns,
-        }
+        all_events = [SystemPing, TextEvent, RichTextEvent, RichColumns]
+
+        return {ev.event_type(): ev for ev in all_events}
 
     async def setup_events(self):
         for p in self.app.plugin_load_order:
@@ -217,7 +224,8 @@ class Core(BasePlugin):
         await self.setup_crypt()
         await self.setup_database()
         await self.setup_lockfuncs()
-        await self.setup_commands()
+        await self.setup_portal_commands()
+        await self.setup_session_commands()
         await self.setup_events()
 
     async def setup_crypt(self):
@@ -243,19 +251,30 @@ class Core(BasePlugin):
         for p in self.app.plugin_load_order:
             self.lockfuncs.update(p.game_lockfuncs())
 
-    def portal_commands(self) -> list["BaseCommand"]:
-        from .commands.help import Help
+    def portal_commands(self) -> list["PortalCommand"]:
+        pass
 
-        return [Help]
+    def session_commands(self) -> list["SessionCommand"]:
+        pass
 
-    async def setup_commands(self):
+    async def setup_portal_commands(self):
         for p in self.app.plugin_load_order:
             if not hasattr(p, "portal_commands"):
                 continue
             for command in p.portal_commands():
-                self.commands[command.key] = command
-                self.commands_priority[command.priority].append(command)
-        for v in self.commands_priority.values():
+                self.portal_commands[command.key] = command
+                self.portal_commands_priority[command.priority].append(command)
+        for v in self.portal_commands_priority.values():
+            v.sort(key=lambda c: c.key)
+
+    async def setup_session_commands(self):
+        for p in self.app.plugin_load_order:
+            if not hasattr(p, "session_commands"):
+                continue
+            for command in p.session_commands():
+                self.session_commands[command.key] = command
+                self.session_commands_priority[command.priority].append(command)
+        for v in self.session_commands_priority.values():
             v.sort(key=lambda c: c.key)
 
 

@@ -6,7 +6,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from ..db import auth as auth_db
 from ..db import users as users_db
-from ..db.auth import RefreshTokenModel, TokenResponse, UserLogin
+from ..db.auth import RefreshTokenModel, TokenResponse, UserLogin, UserRegistration
 
 router = APIRouter()
 
@@ -27,7 +27,7 @@ async def handle_login(request: Request, username: str, password: str) -> TokenR
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(request: Request, data: Annotated[UserLogin, Body()]):
+async def register(request: Request, data: Annotated[UserRegistration, Body()]):
     app = request.app.state.app
     core = request.app.state.core
     crypt_context = core.crypt_context
@@ -36,10 +36,8 @@ async def register(request: Request, data: Annotated[UserLogin, Body()]):
 
     async with db.transaction() as conn:
         user = await auth_db.register_user(
-            conn, crypt_context, data.username, data.password.get_secret_value()
+            conn, crypt_context, data
         )
-        for hook in app.hooks.get("auth.register", []):
-            await hook(user)
     token = TokenResponse.from_uuid(jwt_manager, user.id)
     return token
 

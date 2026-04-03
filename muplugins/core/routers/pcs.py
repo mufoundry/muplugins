@@ -147,7 +147,7 @@ async def create_character(
             result = await hook(app, db, user, char_data, result)
     else:
         async with db.transaction() as conn:
-            result = await pcs_db.create_pc(conn, user, char_data.name)
+            
             for hook in core.app.hooks.get("pc.create", []):
                 await hook(app, conn, result)
     return result

@@ -125,12 +125,12 @@ class Core(BasePlugin):
         self.active_sessions: dict[uuid.UUID, Session] = dict()
         
         # portal commands are only executed on the portal by telnet users.
-        self.portal_commands: dict[str, type] = dict()
+        self.registered_portal_commands: dict[str, type] = dict()
         self.portal_commands_priority: dict[int, list[type]] = defaultdict(list)
 
         # Executed by the server, in the context of a session controlling a character.
         # they are not necessarily executed by in-game objects.
-        self.session_commands: dict[str, type] = dict()
+        self.registered_session_commands: dict[str, type] = dict()
         self.session_commands_priority: dict[int, list[type]] = defaultdict(list)
 
         self.lockparser = None
@@ -252,17 +252,17 @@ class Core(BasePlugin):
             self.lockfuncs.update(p.game_lockfuncs())
 
     def portal_commands(self) -> list["PortalCommand"]:
-        pass
+        return list()
 
     def session_commands(self) -> list["SessionCommand"]:
-        pass
+        return list()
 
     async def setup_portal_commands(self):
         for p in self.app.plugin_load_order:
             if not hasattr(p, "portal_commands"):
                 continue
             for command in p.portal_commands():
-                self.portal_commands[command.key] = command
+                self.registered_portal_commands[command.key] = command
                 self.portal_commands_priority[command.priority].append(command)
         for v in self.portal_commands_priority.values():
             v.sort(key=lambda c: c.key)
@@ -272,7 +272,7 @@ class Core(BasePlugin):
             if not hasattr(p, "session_commands"):
                 continue
             for command in p.session_commands():
-                self.session_commands[command.key] = command
+                self.registered_session_commands[command.key] = command
                 self.session_commands_priority[command.priority].append(command)
         for v in self.session_commands_priority.values():
             v.sort(key=lambda c: c.key)

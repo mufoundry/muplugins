@@ -7,31 +7,20 @@ CREATE EXTENSION IF NOT EXISTS ltree;
 CREATE TABLE users
 (
     id                  UUID PRIMARY KEY   DEFAULT gen_random_uuid(),
-    username            CITEXT NOT NULL,
+    email               CITEXT NOT NULL,
+    verified_at         TIMESTAMPTZ NULL,
+    username            CITEXT NULL,
     admin_level         INT       NOT NULL DEFAULT 0,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at          TIMESTAMPTZ NULL,
-    current_password_id INT       NULL
+    password_hash       TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX ux_users__username_not_deleted ON users (username) WHERE deleted_at IS NULL;
-CREATE INDEX idx_users__current_password_id ON users (current_password_id);
+CREATE UNIQUE INDEX ux_users__email_not_deleted ON users (email);
+CREATE UNIQUE INDEX ux_users__username_not_deleted ON users (username) WHERE deleted_at IS NULL AND username IS NOT NULL;
 
-CREATE TABLE emails (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    email CITEXT NOT NULL,
-    verified_at TIMESTAMPTZ NULL,
-    provider TEXT NOT NULL DEFAULT 'standard',
-    is_primary BOOLEAN NOT NULL DEFAULT FALSE
-);
-
-CREATE UNIQUE INDEX ux_emails__user_id_email_provider ON emails (user_id, email, provider);
-CREATE INDEX idx_emails__user_id ON emails (user_id);
-CREATE INDEX idx_emails__email ON emails (email);
-
-ALTER TABLE emails
+ALTER TABLE users
     ADD CONSTRAINT valid_email CHECK (
         email ~* '^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$'
         );
@@ -45,30 +34,6 @@ CREATE TABLE user_components (
 
     PRIMARY KEY (user_id, component_name)
 );
-
-CREATE INDEX idx_user_components__component_name ON user_components (component_name);
-
-CREATE TABLE passwords
-(
-    id         SERIAL PRIMARY KEY,
-    user_id    UUID      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    password_hash   TEXT      NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_passwords__user_id ON passwords (user_id);
-
-ALTER TABLE users
-    ADD CONSTRAINT fk_current_password
-        FOREIGN KEY (current_password_id) REFERENCES passwords (id) ON DELETE SET NULL;
-
-CREATE VIEW user_passwords AS
-SELECT u.*,
-       p.id         AS password_id,
-       p.password_hash,
-       p.created_at AS password_created_at
-FROM users u
-         LEFT JOIN passwords p ON u.current_password_id = p.id;
 
 CREATE TABLE loginrecords
 (

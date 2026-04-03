@@ -6,7 +6,7 @@ import muforge
 import pydantic
 from asyncpg import Connection
 from asyncpg.exceptions import UniqueViolationError
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 
 from .fields import pc_name
 from .mixins import SoftDeleteMixin
@@ -70,10 +70,12 @@ async def list_pcs_user(
         yield PCModel(**row)
 
 
-async def create_pc(conn: Connection, user: UserModel, character: CharacterCreate) -> PCModel:
-    query = "INSERT INTO pcs (name, user_id, data) VALUES ($1, $2, $3) RETURNING *"
+async def create_pc(core, conn: Connection, user: UserModel, character: CharacterCreate) -> PCModel:
+    query = "INSERT INTO pcs (name, user_id) VALUES ($1, $2) RETURNING *"
     try:
         row = await conn.fetchrow(query, character.name, user.id)
+        for hook in core.app.hooks.get("pc.create", []):
+            await hook(core, conn, row)
     except UniqueViolationError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

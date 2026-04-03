@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pydantic
+import typing
+from pydantic import EmailStr, SecretStr
 from asyncpg import Connection
 from asyncpg.exceptions import UniqueViolationError
 from fastapi import HTTPException, status
@@ -10,9 +12,14 @@ from fastapi import HTTPException, status
 from .fields import username
 from .users import UserModel
 
+class UserRegistration(pydantic.BaseModel):
+    email: EmailStr
+    password: SecretStr
+    username: typing.Optional[username] = None
+
 
 class UserLogin(pydantic.BaseModel):
-    username: username
+    login: username | EmailStr
     password: pydantic.SecretStr
 
 
@@ -39,12 +46,12 @@ class RefreshTokenModel(pydantic.BaseModel):
 
 # meant to be run in a Transaction.
 async def register_user(
-    conn: Connection, crypt_context, username: str, password: str
+    conn: Connection, crypt_context, registration: UserRegistration
 ) -> UserModel:
     admin_level = 0
 
     try:
-        hashed = crypt_context.hash(password)
+        hashed = crypt_context.hash(registration.password.get_secret_value())
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Error hashing password."
@@ -58,13 +65,22 @@ async def register_user(
         # Insert the new user.
         user_row = await conn.fetchrow(
             """
-            INSERT INTO users (username, admin_level)
-            VALUES ($1, $2)
+            INSERT INTO users (email, admin_level, password_hash)
+            VALUES ($1, $2, $3)
             RETURNING *
             """,
-            username,
+            registration.email,
             admin_level,
+            hashed,
         )
+        if registration.username:
+            user_row = await conn.fetchrow(
+                """
+                UPDATE users SET username=$1 WHERE id=$2 RETURNING *
+                """,
+                registration.username,
+                user_row["id"],
+            )
     except UniqueViolationError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -72,24 +88,6 @@ async def register_user(
         )
     user = UserModel(**user_row)
 
-    # Insert the password record.
-    password_row = await conn.fetchrow(
-        """
-        INSERT INTO passwords (user_id, password_hash)
-        VALUES ($1, $2)
-        RETURNING id
-        """,
-        user.id,
-        hashed,
-    )
-    password_id = password_row["id"]
-
-    # Update the user to set the current password.
-    await conn.execute(
-        "UPDATE users SET current_password_id=$1 WHERE id=$2",
-        password_id,
-        user.id,
-    )
     return user
 
 
@@ -97,8 +95,8 @@ async def register_user(
 async def authenticate_user(
     conn: Connection,
     crypt_context,
-    username: str,
-    password: str,
+    email: EmailStr | username,
+    password: SecretStr,
     ip: str,
     user_agent: str | None,
 ) -> UserModel:
@@ -106,10 +104,11 @@ async def authenticate_user(
     retrieved_user = await conn.fetchrow(
         """
         SELECT *
-        FROM user_passwords
-        WHERE username = $1 LIMIT 1
+        FROM users
+        WHERE email = $1::citext OR username = $2::citext LIMIT 1
         """,
-        username,
+        email,
+        email,
     )
 
     if not retrieved_user:
@@ -142,20 +141,10 @@ async def authenticate_user(
             )
         password_row = await conn.fetchrow(
             """
-            INSERT INTO passwords (user_id, password_hash)
-            VALUES ($1, $2)
-            RETURNING id
+            UPDATE users SET password_hash=$1 WHERE id=$2 RETURNING id
             """,
             user_id,
             hashed,
-        )
-        password_id = password_row["id"]
-
-        # Update the user to set the current password.
-        await conn.execute(
-            "UPDATE users SET current_password_id=$1 WHERE id=$2",
-            password_id,
-            retrieved_user["id"],
         )
 
     # Record successful login.

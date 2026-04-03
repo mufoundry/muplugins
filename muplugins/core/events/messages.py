@@ -4,9 +4,10 @@ import uuid
 import pydantic
 from rich.columns import Columns
 from rich.console import Group
+from rich.text import Text
 
 from ..connection import CoreConnection
-from ..db.fields import RichText
+from ..db.fields import rich_text
 from .base import EventBase
 
 class TextEvent(EventBase):
@@ -20,10 +21,10 @@ class TextEvent(EventBase):
         return "text"
 
 class RichTextEvent(EventBase):
-    text: RichText
+    text: rich_text
 
     async def handle_event(self, conn: "CoreConnection"):
-        await conn.send_rich(self.text.text)
+        await conn.send_rich(Text.from_markup(self.text))
     
     @classmethod
     def event_type(cls) -> str:
@@ -33,14 +34,14 @@ class RichTextEvent(EventBase):
 class RichColumns(EventBase):
     padding_min: int = 0
     padding_max: int = 5
-    data: list[tuple[RichText, list[RichText]]] = pydantic.Field(default_factory=list)
+    data: list[tuple[rich_text, list[rich_text]]] = pydantic.Field(default_factory=list)
 
     async def handle_event(self, conn: "CoreConnection"):
         cols = list()
         for title, items in self.data:
             col = Columns(
-                [item.text for item in items],
-                title=title.text,
+                [Text.from_markup(item) for item in items],
+                title=Text.from_markup(title),
                 padding=(self.padding_min, self.padding_max),
                 expand=True,
             )

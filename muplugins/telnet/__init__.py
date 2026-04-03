@@ -59,10 +59,12 @@ class Telnet(BasePlugin):
 
         return {"telnet": telnet_router}
 
-    async def post_setup(self):
-        for p in self.app.plugin_load_order:
-            if hasattr(p, "portal_telnet_options"):
-                self.telnet_options.update(p.portal_telnet_options())
+    async def post_setup(self, app_name: str):
+        match app_name:
+            case "portal":
+                for p in self.app.plugin_load_order:
+                    if hasattr(p, "portal_telnet_options"):
+                        self.telnet_options.update(p.portal_telnet_options())
 
 
 __all__ = ["Telnet"]

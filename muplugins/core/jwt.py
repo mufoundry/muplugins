@@ -8,12 +8,14 @@ class JWTManager:
         self.plugin = plugin
         self.jwt_settings = plugin.settings["jwt"]
 
-    def _create_token(self, sub: str, expires: datetime, refresh: bool = False):
-        data = {
-            "sub": sub,
+    def _create_token(self, in_data: dict, expires: datetime, refresh: bool = False):
+        data = in_data.copy()
+        if "sub" not in data:
+            raise ValueError("Data must contain 'sub' field.")
+        data.update({
             "exp": expires,
             "iat": datetime.now(tz=timezone.utc),
-        }
+        })
         if refresh:
             data["refresh"] = True
 
@@ -21,16 +23,16 @@ class JWTManager:
             data, self.jwt_settings["secret"], algorithm=self.jwt_settings["algorithm"]
         )
 
-    def create_token(self, sub: str):
+    def create_token(self, data: dict):
         return self._create_token(
-            sub,
+            data,
             datetime.now(tz=timezone.utc)
             + timedelta(minutes=self.jwt_settings["token_expire_minutes"]),
         )
 
-    def create_refresh(self, sub: str):
+    def create_refresh(self, data: dict):
         return self._create_token(
-            sub,
+            data,
             datetime.now(tz=timezone.utc)
             + timedelta(minutes=self.jwt_settings["refresh_expire_minutes"]),
             True,

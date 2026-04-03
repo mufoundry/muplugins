@@ -1,5 +1,6 @@
 import asyncio
 import time
+from loguru import logger
 
 import jwt
 import muforge
@@ -33,10 +34,21 @@ class CoreConnection(BaseConnection):
         if self.jwt:
             out["Authorization"] = f"Bearer {self.jwt}"
         return out
+    
+    @property
+    def admin_level(self) -> int:
+        """
+        This is maybe not the best use of a JWT, but it's good enough for our purposes.
+        Any HTTP request will still check permissions on its side, so this is mostly for
+        convenience in checking what commands are displayed to the user.
+        """
+        if not self.payload:
+            return 0
+        return self.payload.get("admin_level", 0)
 
     async def handle_token(self, token: TokenResponse):
         self.jwt = token.access_token
-        self.payload = self.jwt_manager.decode_token(self.jwt)
+        self.payload = self.core.jwt_manager.decode_token(self.jwt)
         self.refresh_token = token.refresh_token
 
     async def handle_login(self, token: TokenResponse):
@@ -44,6 +56,7 @@ class CoreConnection(BaseConnection):
         parser_class = self.app.parsers["user"]
 
         up = parser_class()
+        
         await self.push_parser(up)
 
     def start_tasks(self, tg):

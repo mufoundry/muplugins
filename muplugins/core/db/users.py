@@ -11,7 +11,8 @@ from .mixins import SoftDeleteMixin, TimestampMixin
 
 class UserModel(SoftDeleteMixin):
     id: uuid.UUID
-    username: username
+    email: pydantic.EmailStr
+    username: typing.Optional[username]
     admin_level: int
     data: dict | None = None
 

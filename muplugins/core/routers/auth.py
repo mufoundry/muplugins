@@ -23,7 +23,7 @@ async def handle_login(request: Request, username: str, password: str) -> TokenR
         result = await auth_db.authenticate_user(
             conn, crypt_context, username, password, ip, user_agent
         )
-    return TokenResponse.from_uuid(jwt_manager, result.id)
+    return TokenResponse.from_dict(jwt_manager, {"sub": str(result.id), "admin_level": result.admin_level})
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -38,7 +38,7 @@ async def register(request: Request, data: Annotated[UserRegistration, Body()]):
         user = await auth_db.register_user(
             conn, crypt_context, data
         )
-    token = TokenResponse.from_uuid(jwt_manager, user.id)
+    token = TokenResponse.from_dict(jwt_manager, {"sub": str(user.id), "admin_level": user.admin_level})
     return token
 
 
@@ -80,4 +80,4 @@ async def refresh_token(request: Request, ref: Annotated[RefreshTokenModel, Body
     async with db.connection() as conn:
         user = await users_db.get_user(conn, sub)
 
-    return TokenResponse.from_uuid(jwt_manager, sub)
+    return TokenResponse.from_dict(jwt_manager, {"sub": str(user.id), "admin_level": user.admin_level})

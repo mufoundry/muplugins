@@ -186,11 +186,11 @@ class Core(BasePlugin):
         return {"system_pinger": SystemPinger}
 
     def portal_parsers(self) -> dict[str, type]:
-        from .portal_parsers.auth import LoginParser
-        from .portal_parsers.pc import PCParser
-        from .portal_parsers.user import UserParser
+        from .portal_parsers import AuthParser
+        from .portal_parsers import PCParser
+        from .portal_parsers import UserParser
 
-        return {"auth": LoginParser, "user": UserParser, "pc": PCParser}
+        return {"auth": AuthParser, "user": UserParser, "pc": PCParser}
 
     def game_classes(self) -> dict[str, type]:
         from .sessions import Session
@@ -218,15 +218,20 @@ class Core(BasePlugin):
         for k, v in self.events.items():
             self.events_reversed[v] = k
 
-    async def setup_final(self):
-        self.app.fastapi_instance.state.core = self
-        self.jwt_manager = JWTManager(self)
-        await self.setup_crypt()
-        await self.setup_database()
-        await self.setup_lockfuncs()
-        await self.setup_portal_commands()
-        await self.setup_session_commands()
+    async def setup_final(self, app_name: str):
         await self.setup_events()
+        self.jwt_manager = JWTManager(self)
+
+        match app_name:
+            case "game":
+                self.app.fastapi_instance.state.core = self
+                
+                await self.setup_crypt()
+                await self.setup_database()
+                await self.setup_lockfuncs()
+                await self.setup_session_commands()
+            case "portal":
+                await self.setup_portal_commands()
 
     async def setup_crypt(self):
         from passlib.context import CryptContext
@@ -252,18 +257,32 @@ class Core(BasePlugin):
             self.lockfuncs.update(p.game_lockfuncs())
 
     def portal_commands(self) -> list["PortalCommand"]:
-        return list()
+        out = list()
+        from .portal_commands.universal import Help, MSSP, Quit
+        out.extend([Help, MSSP, Quit])
+
+        from .portal_commands.auth import Login, Register
+        out.extend([Login, Register])
+
+        from .portal_commands.user import Create, Play
+        out.extend([Create, Play])
+
+        return out
 
     def session_commands(self) -> list["SessionCommand"]:
         return list()
 
     async def setup_portal_commands(self):
         for p in self.app.plugin_load_order:
+            # first gather all commands.
             if not hasattr(p, "portal_commands"):
                 continue
             for command in p.portal_commands():
                 self.registered_portal_commands[command.key] = command
-                self.portal_commands_priority[command.priority].append(command)
+        
+        # sort by priority
+        for command in self.registered_portal_commands.values():
+            self.portal_commands_priority[command.priority].append(command)
         for v in self.portal_commands_priority.values():
             v.sort(key=lambda c: c.key)
 
@@ -273,7 +292,10 @@ class Core(BasePlugin):
                 continue
             for command in p.session_commands():
                 self.registered_session_commands[command.key] = command
-                self.session_commands_priority[command.priority].append(command)
+        
+        # sort by priority
+        for command in self.registered_session_commands.values():
+            self.session_commands_priority[command.priority].append(command)
         for v in self.session_commands_priority.values():
             v.sort(key=lambda c: c.key)
 

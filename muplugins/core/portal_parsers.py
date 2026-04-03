@@ -1,5 +1,6 @@
-import asyncio
-import typing
+from muforge.portal.connections.parser import BaseParser
+from .db.pcs import PCModel, ActiveAs
+from .db.users import UserModel
 import uuid
 
 from httpx import HTTPStatusError
@@ -7,13 +8,121 @@ from loguru import logger
 from rich.errors import MarkupError
 from rich.markup import escape
 
-from ..commands.base import CMD_MATCH
-from ..db.pcs import ActiveAs, PCModel
-from ..db.users import UserModel
-from .base import CoreParser
 
+class CoreParser(BaseParser):
+    parser_type = "core"
+
+    @property
+    def core(self):
+        return self.connection.core
+    
+    def available_commands(self):
+        priorities = sorted(self.connection.core.portal_commands_priority.keys())
+        for priority in priorities:
+            for c in self.connection.core.portal_commands_priority[priority]:
+                if c.check_parser(self) and c.check_access(self):
+                    yield c
+
+    async def handle_command(self, command: str):
+        found = None
+        for cmd_class in self.available_commands():
+            if not (match_data := cmd_class.check_match(self, command)):
+                continue
+            found = cmd_class(self, command, match_data)
+            break
+
+        if not found:
+            await self.handle_no_match(command)
+            return
+        
+        try:
+            await found.execute()
+        except MarkupError as e:
+            await self.send_rich(f"[bold red]Error parsing markup:[/] {escape(str(e))}")
+        except ValueError as error:
+            await self.send_line(f"{error}")
+        except HTTPStatusError as e:
+            if e.response.status_code == 401:
+                await self.send_line("You have been disconnected.")
+                await self.connection.pop_parser()
+                return
+            logger.exception("HTTP error in handle_command: %s")
+            await self.send_line("An error occurred. Please contact staff.")
+        except Exception as error:
+            if self.connection.admin_level >= 1:
+                await self.send_line(f"An error occurred: {error}")
+            else:
+                await self.send_line("An unknown error occurred. Contact staff.")
+            logger.exception(error)
+    
+    async def handle_no_match(self, command: str):
+        await self.send_line("Huh? (Type 'help' for help)")
+
+class AuthParser(CoreParser):
+    """
+    Implements the login menu. User registration and authentication, etc.
+    """
+    parser_type = "auth"
+
+    async def display_welcome_logo(self):
+        pass
+
+    async def display_welcome_text(self):
+        await self.send_line(
+            f"Welcome to {self.app.complete_settings['MUFORGE'].get('name', 'MuForge')}!"
+        )
+
+    async def display_welcome_commands(self):
+        help_table = self.make_table("Command", "Description")
+        help_table.add_row("register <email>=<password>", "Register a new account.")
+        help_table.add_row("login <email>=<password>", "Login to an existing account.")
+        help_table.add_row("info", "Display game information. (Same as MSSP)")
+        help_table.add_row("help", "Display more information about available commands.")
+        help_table.add_row("quit", "Disconnect from the game.")
+        await self.send_rich(help_table)
+
+    async def show_welcome(self):
+        await self.display_welcome_logo()
+        await self.display_welcome_text()
+        await self.display_welcome_commands()
+
+    async def on_start(self):
+        await self.show_welcome()
+
+class UserParser(CoreParser):
+    """
+    Implements the character selection and user management features.
+    """
+    parser_type = "user"
+
+    async def on_start(self):
+        await self.handle_look()
+    
+    def generate_help(self) -> str:
+        help_table = self.make_table("Command", "Description", title="User Commands")
+        help_table.add_row("help", "Displays this help message.")
+        help_table.add_row("create <name>", "Creates a new character.")
+        help_table.add_row("play <name>", "Selects a character to play.")
+        help_table.add_row("delete <name>", "Deletes a character.")
+        help_table.add_row("logout", "Logs out of the game.")
+        help_table.add_row("look", "Lists all characters.")
+        return help_table
+
+
+    async def handle_look(self):
+        user_id = self.connection.payload.get("sub")
+        character_data = await self.api_call("GET", f"/v1/users/{user_id}/characters")
+
+        characters = [PCModel(**c) for c in character_data]
+
+        character_table = self.make_table("Name", "Last Active", title="Characters")
+        for character in characters:
+            character_table.add_row(character.name, str(character.last_active_at))
+        await self.send_rich(character_table)
 
 class PCParser(CoreParser):
+    parser_type = "pc"
+    
     def __init__(self, active: ActiveAs):
         super().__init__()
         self.active = active

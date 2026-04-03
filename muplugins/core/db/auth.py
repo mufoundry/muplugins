@@ -18,7 +18,7 @@ class UserRegistration(pydantic.BaseModel):
 
 
 class UserLogin(pydantic.BaseModel):
-    login: username | EmailStr
+    username: EmailStr
     password: pydantic.SecretStr
 
 
@@ -26,17 +26,13 @@ class TokenResponse(pydantic.BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-
+        
+    
     @classmethod
-    def from_str(cls, manager, sub: str) -> "TokenResponse":
-        token = manager.create_token(sub)
-        refresh = manager.create_refresh(sub)
+    def from_dict(cls, manager, data: dict) -> "TokenResponse":
+        token = manager.create_token(data)
+        refresh = manager.create_refresh(data)
         return cls(access_token=token, refresh_token=refresh, token_type="bearer")
-
-    @classmethod
-    def from_uuid(cls, manager, id: uuid.UUID) -> "TokenResponse":
-        sub = str(id)
-        return cls.from_str(manager, sub)
 
 
 class RefreshTokenModel(pydantic.BaseModel):
@@ -86,7 +82,7 @@ async def register_user(
 async def authenticate_user(
     conn: Connection,
     crypt_context,
-    email: EmailStr | username,
+    email: EmailStr,
     password: SecretStr,
     ip: str,
     user_agent: str | None,
@@ -96,10 +92,9 @@ async def authenticate_user(
         """
         SELECT *
         FROM users
-        WHERE email = $1::citext OR username = $2::citext LIMIT 1
+        WHERE email = $1::citext LIMIT 1
         """,
-        email,
-        email,
+        email
     )
 
     if not retrieved_user:

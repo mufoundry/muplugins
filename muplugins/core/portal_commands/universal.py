@@ -43,10 +43,10 @@ class Help(UniversalCommand):
     match_defs = {"help": 1, "?": 1}
 
     async def func(self):
-        if not self.args:
+        if not (args := self.parsed.get("args", "")):
             await self.display_full_help()
             return
-        await self.display_file(self.args)
+        await self.display_file(args)
 
     async def handle_unknown(self, file_name: str = ""):
         await self.send_line(f"Command not found: {file_name}")

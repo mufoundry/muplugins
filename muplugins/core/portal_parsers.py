@@ -100,12 +100,12 @@ class UserParser(CoreParser):
     
     def generate_help(self) -> str:
         help_table = self.make_table("Command", "Description", title="User Commands")
-        help_table.add_row("help", "Displays this help message.")
+        help_table.add_row("help", "Displays help menu.")
         help_table.add_row("create <name>", "Creates a new character.")
         help_table.add_row("play <name>", "Selects a character to play.")
-        help_table.add_row("delete <name>", "Deletes a character.")
+        #help_table.add_row("delete <name>", "Deletes a character.")
         help_table.add_row("logout", "Logs out of the game.")
-        help_table.add_row("look", "Lists all characters.")
+        #help_table.add_row("look", "Lists all characters.")
         return help_table
 
 
@@ -119,6 +119,8 @@ class UserParser(CoreParser):
         for character in characters:
             character_table.add_row(character.name, str(character.last_active_at))
         await self.send_rich(character_table)
+        help_text = self.generate_help()
+        await self.send_rich(help_text)
 
 class PCParser(CoreParser):
     parser_type = "pc"

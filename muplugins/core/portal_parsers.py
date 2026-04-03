@@ -111,7 +111,7 @@ class UserParser(CoreParser):
 
     async def handle_look(self):
         user_id = self.connection.payload.get("sub")
-        character_data = await self.api_call("GET", f"/v1/users/{user_id}/characters")
+        character_data = await self.api_call("GET", f"/v1/users/{user_id}/pcs")
 
         characters = [PCModel(**c) for c in character_data]
 
@@ -210,7 +210,7 @@ class PCParser(CoreParser):
 
     async def refresh_active(self):
         json_data = await self.api_call(
-            "GET", f"/characters/{self.character.id}/active"
+            "GET", f"/pcs/{self.character.id}/active"
         )
         self.active = ActiveAs(**json_data)
 

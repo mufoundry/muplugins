@@ -48,7 +48,7 @@ class Play(_UserCommand):
         user_id = self.connection.payload.get("sub")
         user_data = await self.api_call("GET", f"/v1/users/{user_id}")
         user = UserModel(**user_data)
-        character_data = await self.api_call("GET", f"/v1/users/{user_id}/characters")
+        character_data = await self.api_call("GET", f"/v1/users/{user_id}/pcs")
         characters = [PCModel(**c) for c in character_data]
 
         if not (character := partial_match(args, characters, key=lambda c: c.name)):

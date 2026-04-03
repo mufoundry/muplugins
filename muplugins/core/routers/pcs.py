@@ -134,7 +134,7 @@ async def create_character(
     user: Annotated[UserModel, Depends(get_current_user)],
     char_data: Annotated[CharacterCreate, Body()],
 ):
-    app = request.app.state.app
+    app = request.app.state.game
     core = request.app.state.core
     db = core.db
 

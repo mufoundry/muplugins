@@ -15,7 +15,6 @@ from .users import UserModel
 class UserRegistration(pydantic.BaseModel):
     email: EmailStr
     password: SecretStr
-    username: typing.Optional[username] = None
 
 
 class UserLogin(pydantic.BaseModel):
@@ -73,14 +72,6 @@ async def register_user(
             admin_level,
             hashed,
         )
-        if registration.username:
-            user_row = await conn.fetchrow(
-                """
-                UPDATE users SET username=$1 WHERE id=$2 RETURNING *
-                """,
-                registration.username,
-                user_row["id"],
-            )
     except UniqueViolationError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -143,8 +134,8 @@ async def authenticate_user(
             """
             UPDATE users SET password_hash=$1 WHERE id=$2 RETURNING id
             """,
-            user_id,
             hashed,
+            user_id
         )
 
     # Record successful login.

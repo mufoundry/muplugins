@@ -28,7 +28,7 @@ async def handle_login(request: Request, username: str, password: str) -> TokenR
 
 @router.post("/register", response_model=TokenResponse)
 async def register(request: Request, data: Annotated[UserRegistration, Body()]):
-    app = request.app.state.app
+    app = request.app.state.game
     core = request.app.state.core
     crypt_context = core.crypt_context
     db = core.db

@@ -11,20 +11,21 @@ from ..sessions import SessionParser
 
 
 class OutputCapture(io.TextIOBase):
-    def __init__(self, send_line):
+    def __init__(self):
         self._buffer = io.StringIO()
-        self._send_line = send_line
 
     def write(self, text: str) -> int:
         if text:
             self._buffer.write(text)
         return len(text)
 
-    def flush(self) -> None:
+    def flush(self):
+        pass
+
+    def retrieve(self) -> str:
         result = self._buffer.getvalue()
-        if result:
-            self._send_line(result)
         self._buffer = io.StringIO()
+        return result
 
     def isatty(self) -> bool:
         return False
@@ -44,12 +45,14 @@ class REPLParser(SessionParser):
         self._history: list[str] = []
         self._globals: dict = {
             "parser": self,
+            "sys": sys,
+            "asyncio": asyncio
         }
         session.repl_globals(self._globals)
         self._running = False
 
     async def start(self):
-        await self.send_line(self._INSTRUCTIONS)
+        await self.send_rich(self._INSTRUCTIONS)
         self._running = True
         self._trigger_prompt()
 
@@ -62,21 +65,16 @@ class REPLParser(SessionParser):
 
         stripped = raw.strip()
         if stripped in ("exit", "quit", "q"):
-            await self.send_line("[green]Exiting REPL.[/green]")
+            await self.send_rich("[green]Exiting REPL.[/green]")
             self.session.parser_stack.pop()
             return
 
         self._history.append(raw)
         await self._eval(raw)
 
-    def _prompt(self):
-        self.session.send_event_nowait(
-            self.session.core.events["prompt"]()
-        )
-
     async def _eval(self, code: str):
-        stdout_capture = OutputCapture(self.send_line)
-        stderr_capture = OutputCapture(self.send_line)
+        stdout_capture = OutputCapture()
+        stderr_capture = OutputCapture()
 
         old_stdout, old_stderr = sys.stdout, sys.stderr
         sys.stdout, sys.stderr = stdout_capture, stderr_capture
@@ -87,9 +85,9 @@ class REPLParser(SessionParser):
 
             if has_await:
                 wrapped = f"async def _repl():\n{self._indent(code)}"
-                exec_globals = {"asyncio": asyncio, **self._globals}
-                exec(wrapped, exec_globals)
-                result = await exec_globals["_repl"]()
+                
+                exec(wrapped, self._globals)
+                result = await self._globals["_repl"]()
             else:
                 result = exec(code, self._globals)
 
@@ -100,16 +98,24 @@ class REPLParser(SessionParser):
             if "incomplete" in str(e).lower():
                 self._trigger_prompt()
                 return
-            await self.send_line(f"[red]SyntaxError:[/red] {e}")
+            await self.send_rich(f"[red]SyntaxError:[/red] {e}")
         except Exception as e:
-            await self.send_line(f"[red]{type(e).__name__}:[/red] {e}")
+            await self.send_rich(f"[red]{type(e).__name__}:[/red] {e}")
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
-            stdout_capture.flush()
-            stderr_capture.flush()
+        
+        cap_out = stdout_capture.retrieve()
+        if cap_out:
+            await self.send_line(cap_out)
+        cap_err = stderr_capture.retrieve()
+        if cap_err:
+            await self.send_line(cap_err)
 
         self._trigger_prompt()
 
     def _prompt(self):
+        pass
+
+    def _trigger_prompt(self):
         pass

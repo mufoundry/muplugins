@@ -9,6 +9,8 @@ from lark import Lark
 from loguru import logger
 from muforge.plugin import BasePlugin
 
+from muplugins.core.session_commands.base import SessionCommand
+
 from .database import INIT_SQL, Database
 from .jwt import JWTManager
 from .sessions import Session
@@ -270,7 +272,12 @@ class Core(BasePlugin):
         return out
 
     def session_commands(self) -> list["SessionCommand"]:
-        return list()
+        out = list()
+        
+        from .session_commands.system import Py
+        out.append(Py)
+
+        return out
 
     async def setup_portal_commands(self):
         for p in self.app.plugin_load_order:

@@ -3,8 +3,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
 
-class MSSPResponse(BaseModel):
-    data: tuple[tuple[str, str], ...] = Field(default_factory=lambda: ())
+MSSPResponse = tuple[tuple[str, str], ...]
 
 
 router = APIRouter()
@@ -19,7 +18,8 @@ async def get_mssp(request: Request):
 
     Reference: https://mudstandards.org/mud/mssp
     """
-    app = request.app.state.application
+    app = request.app.state.game
+    core = request.app.state.core
     plugin = app.plugins["telnet"]
     overrides = plugin.settings.get("mssp", dict()).copy()
 
@@ -38,7 +38,7 @@ async def get_mssp(request: Request):
     if ovr := overrides.pop("PLAYERS", None) is not None:
         output.append(("PLAYERS", str(ovr)))
     else:
-        output.append(("PLAYERS", str(len(app.active_sessions))))
+        output.append(("PLAYERS", str(len(core.active_sessions))))
 
     # Likewise with UPTIME...
     # This should not be overriden. That'd be a lie!
@@ -108,4 +108,4 @@ async def get_mssp(request: Request):
     for key, value in overrides.items():
         output.append((key.upper(), value))
 
-    return MSSPResponse(data=tuple(output))
+    return tuple(output)

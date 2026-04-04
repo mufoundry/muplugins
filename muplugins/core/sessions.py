@@ -8,11 +8,18 @@ from dataclasses import dataclass
 from .db.pcs import ActiveAs
 from .events.base import EventBase
 from .events.messages import RichTextEvent, TextEvent
+from .events.system import SystemPing
 
 import typing
 
 if typing.TYPE_CHECKING:
     from .session_commands.base import SessionCommand
+
+
+class Subscription:
+    def __init__(self, request, queue: asyncio.Queue):
+        self.request = request
+        self.queue = queue
 
 
 class SessionParser:
@@ -36,6 +43,11 @@ class SessionParser:
     
     async def send_line(self, text: str):
         await self.session.send_line(text)
+    
+    async def send_rich(self, text: str):
+        await self.session.send_event(
+            RichTextEvent(text=text)
+        )
 
 class Session:
 
@@ -47,6 +59,7 @@ class Session:
         self.last_active_at = datetime.now(timezone.utc)
         self.subscriptions: dict[uuid.UUID, Subscription] = {}
         self.active = False
+        self.task = None
         self.task_group = None
         self.shutdown_event = asyncio.Event()
         self.parser_stack: list[SessionParser] = []
@@ -92,28 +105,20 @@ class Session:
             text += "\n"
         await self.send_text(text)
 
-    async def subscribe(self, request: Request) -> tuple[uuid.UUID, asyncio.Queue]:
-        """Create a new queue for this character and add it to the subscription list."""
-        async with self.db.connection() as conn:
-             row = await conn.fetchrow("""
-                INSERT INTO pc_subscriptions (pc_id, user_id, ip_address, user_agent)
-                VALUES ($1, $2, $3, $4) RETURNING id
-             """, self.pc.id, self.user.id, request.client.host, request.headers.get("User-Agent"))
-
+    async def subscribe(self, request) -> tuple[uuid.UUID, asyncio.Queue]:
         sub = Subscription(request, asyncio.Queue())
-        self.subscriptions[row["id"]] = sub
-        return row["id"], sub.queue
+        id = uuid.uuid4()
+        self.subscriptions[id] = sub
+        return id, sub.queue
 
     async def unsubscribe(self, id: uuid.UUID):
         """Remove the given queue from this session's subscription list."""
         self.subscriptions.pop(id, None)
-        async with self.db.connection() as conn:
-            await conn.execute("DELETE FROM pc_subscriptions WHERE id = $1", id)
 
     async def run(self):
         async with asyncio.TaskGroup() as tg:
             self.task_group = tg
-            await tg.create_task(self.listen_events())
+            #await tg.create_task(self.listen_events())
 
             await self.shutdown_event.wait()
 
@@ -123,12 +128,12 @@ class Session:
 
         """
         self.active = True
-        async with self.db.connection() as conn:
-            await conn.execute("""
-                INSERT INTO pc_sessions (pc_id) VALUES ($1)
-            """, self.pc.id)
-        self.app.task_group.create_task(self.run())
+        #self.task = asyncio.create_task(self.run())
+        await self.send_event(SystemPing())
         await self.on_start()
+    
+    async def on_start(self):
+        pass
 
     async def stop_local(self):
         for sub in self.subscriptions.values():
@@ -146,8 +151,8 @@ class Session:
                     yield command
     
     async def execute_session_command(self, command: str) -> bool:
-        for cmd in await self.available_commands():
-            if match := await command.check_match(command):
+        async for cmd in self.available_commands():
+            if match := await cmd.check_match(self, command):
                 instance = cmd(self, command, match)
                 return await instance.execute()
 

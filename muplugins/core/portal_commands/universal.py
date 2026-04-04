@@ -52,7 +52,7 @@ class Help(UniversalCommand):
         await self.send_line(f"Command not found: {file_name}")
 
     async def display_file(self, file_name: str):
-        commands = self.connection.available_commands(self.parser).values()
+        commands = self.parser.available_commands().values()
         if not (command := partial_match(file_name, commands, key=lambda c: c.name)):
             await self.handle_unknown(file_name)
             return
@@ -60,7 +60,7 @@ class Help(UniversalCommand):
 
     async def display_full_help(self):
         categories = defaultdict(list)
-        commands = self.connection.available_commands(self.parser).values()
+        commands = self.parser.available_commands().values()
         for command in commands:
             categories[command.help_category].append(command)
 
@@ -82,6 +82,11 @@ class MSSP(UniversalCommand):
     match_defs = {"mssp": 2}
 
     async def func(self):
-        data = await self.connection.gather_mssp()
-        rendered = "\r\n".join([f"{k}: {v}" for k, v in data.items()])
+        try:
+            data = await self.api_call("GET", "/v1/telnet/mssp")
+        except Exception as e:
+            await self.send_line(f"Error retrieving MSSP data: {str(e)}")
+            return
+        
+        rendered = "\r\n".join([f"{k}: {v}" for k, v in data])
         await self.send_line(rendered)

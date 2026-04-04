@@ -31,11 +31,6 @@ async def get_pcs(
     return streaming_list(stream)
 
 
-@router.get("/active", response_model=typing.List[PCModel])
-async def get_active_pc(user: Annotated[UserModel, Depends(get_current_user)]):
-    pass
-
-
 @router.get("/{pc_id}", response_model=PCModel)
 async def get_pc(
     request: Request,
@@ -51,15 +46,6 @@ async def get_pc(
         )
     return pc
 
-
-@router.get("/{pc_id}/active", response_model=ActiveAs)
-async def get_pc_active_as(
-    request: Request,
-    user: Annotated[UserModel, Depends(get_current_user)],
-    pc_id: uuid.UUID,
-):
-    acting = await get_acting_pc(request, user, pc_id)
-    return acting
 
 
 @router.get("/{character_id}/events")
@@ -80,13 +66,13 @@ async def stream_character_events(
         should_start = True
 
     async def event_generator():
-        id, sub = await session.subscribe(request)
+        id, queue = await session.subscribe(request)
         graceful = False
         try:
             if should_start:
                 await session.start()
             # blocks until a new event
-            while item := await sub.queue.get():
+            while item := await queue.get():
                 ev_class = item.__class__
                 ev_name = core.events_reversed.get(ev_class)
                 yield f"event: {ev_name}\ndata: {item.model_dump_json()}\n\n"
@@ -111,11 +97,7 @@ async def submit_command(
     command: Annotated[CommandSubmission, Body()],
 ):
     core = request.app.state.core
-
-    if character_id not in user.characters:
-        raise HTTPException(
-            status_code=403, detail="You do not have permission to use this character."
-        )
+    acting = await get_acting_pc(request, user, character_id)
 
     if not (session := core.active_sessions.get(character_id, None)):
         raise HTTPException(status_code=404, detail="Character entity not found.")
@@ -138,16 +120,5 @@ async def create_character(
     core = request.app.state.core
     db = core.db
 
-    # This override is provided for plugins that want to handle character 
-    # creation themselves, such as to add custom data or trigger 
-    # custom events.
-    if (hooks := core.app.hooks.get("pc.create.override", [])):
-        result = None
-        for hook in hooks:
-            result = await hook(app, db, user, char_data, result)
-    else:
-        async with db.transaction() as conn:
-            
-            for hook in core.app.hooks.get("pc.create", []):
-                await hook(app, conn, result)
-    return result
+    async with db.transaction() as conn:
+        return await pcs_db.create_pc(core, conn, user, char_data)

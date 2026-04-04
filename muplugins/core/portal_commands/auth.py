@@ -33,7 +33,12 @@ class Register(_AuthCommand):
             data = {"email": u.email, "password": u.password.get_secret_value()}
             json_data = await self.api_call("POST", "/v1/auth/register", json=data)
         except HTTPStatusError as e:
-            await self.send_line(f"Registration failed: {e}")
+            # there's a detail field in the response that should have more info about why it failed.
+            try:
+                error_detail = e.response.json().get("detail", "")
+                await self.send_line(f"Registration failed: {error_detail}")
+            except Exception:
+                await self.send_line(f"Registration failed: {e}")
             return
         token = TokenResponse(**json_data)
         await self.connection.handle_login(token)

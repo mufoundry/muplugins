@@ -2,6 +2,7 @@ from muforge.portal.connections.parser import BaseParser
 from .db.pcs import PCModel, ActiveAs
 from .db.users import UserModel
 import uuid
+import asyncio
 
 from httpx import HTTPStatusError
 from loguru import logger
@@ -153,7 +154,7 @@ class PCParser(CoreParser):
         self.shutdown_event.set()
 
     async def handle_event(self, event_name: str, event_data: dict):
-        if event_class := self.app.events.get(event_name, None):
+        if event_class := self.core.events.get(event_name, None):
             event = event_class(**event_data)
             await event.handle_event(self)
         else:
@@ -188,89 +189,17 @@ class PCParser(CoreParser):
                 disconnects += 1
                 return
 
-    def available_commands(self) -> dict[int, list["BaseCommand"]]:
-        out = dict()
-        for priority, commands in self.app.commands_priority.items():
-            for c in commands:
-                if c.check_access(self.active):
-                    out[c.name] = c
-        return out
 
-    def iter_commands(self):
-        priorities = sorted(self.app.commands_priority.keys())
-        for priority in priorities:
-            for command in self.app.commands_priority[priority]:
-                if command.check_access(self.active):
-                    yield command
-
-    def match_command(self, cmd: str) -> typing.Optional["BaseCommand"]:
-        for command in self.iter_commands():
-            if command.unusable:
-                continue
-            if command.check_match(self.active, cmd):
-                return command
-
-    async def refresh_active(self):
-        json_data = await self.api_call(
-            "GET", f"/pcs/{self.character.id}/active"
-        )
-        self.active = ActiveAs(**json_data)
-
-    async def handle_no_match(self, match_dict: dict | None):
-        await self.send_line("Huh? (Type 'help' for help)")
-
-    async def handle_command(self, event: str):
+    async def handle_no_match(self, command: str):
+        """
+        Relay the command to the game engine.
+        """
         try:
-            await self.refresh_active()
-        except Exception as e:
-            logger.error(e)
-            await self.send_line("An error occurred. Please contact staff.")
-            return
-
-        if not (match_data := CMD_MATCH.match(event)):
-            await self.handle_no_match(None)
-            return
-
-        # regex match_data.groupdict() returns a dictionary of all the named groups
-        # and their values. Missing groups are None. That's silly. We'll filter it out.
-        match_dict = {k: v for k, v in match_data.groupdict().items() if v is not None}
-        cmd_key = match_dict.get("cmd")
-        if not (cmd := self.match_command(cmd_key.lower())):
-            await self.handle_no_match(match_dict)
-            return
-
-        try:
-            command = cmd(self, cmd_key, match_dict)
-            await command.execute()
-        except MarkupError as e:
-            await self.send_rich(f"[bold red]Error parsing markup:[/] {escape(str(e))}")
-        except ValueError as error:
-            await self.send_line(f"{error}")
-        except Exception as error:
-            if self.user.admin_level >= 1:
-                await self.send_line(f"An error occurred: {error}")
-            else:
-                await self.send_line("An unknown error occurred. Contact staff.")
-            logger.exception(error)
-
-    async def handle_command_remote(self, event: str):
-        try:
-            result = await self.api_call(
-                "POST",
-                f"/v1/pcs/{self.character.id}/command",
-                json={"command": event},
-            )
-        except MarkupError as e:
-            await self.send_rich(f"[bold red]Error parsing markup:[/] {escape(str(e))}")
-        except ValueError as error:
-            await self.send_line(f"{error}")
+            res = await self.api_call("POST", f"/v1/pcs/{self.character.id}/command", json={"command": command})
         except HTTPStatusError as e:
             if e.response.status_code == 401:
                 await self.send_line("You have been disconnected.")
                 await self.connection.pop_parser()
                 return
-            logger.exception("HTTP error in handle_command: %s")
+            logger.exception("HTTP error in handle_no_match: %s")
             await self.send_line("An error occurred. Please contact staff.")
-        except Exception as error:
-            await self.send_line(f"An error occurred: {error}")
-            logger.exception(error)

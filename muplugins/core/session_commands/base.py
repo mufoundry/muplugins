@@ -24,7 +24,7 @@ class SessionCommand:
     # If help_category is None, the command will not be listed in the help system.
     help_category = "Uncategorized"
     priority = 0
-    aliases = dict()
+    match_defs: dict[str, int] = dict()
     min_level = 0
     # Set this to true if you want the command to exist but never reach the parser.
     # this could be helpful for creating help files or meta-topics.
@@ -34,7 +34,7 @@ class SessionCommand:
         pass
 
     @classmethod
-    def check_match(cls, session: Session, command: str) -> typing.Optional[dict[str, str]]:
+    async def check_match(cls, session: Session, command: str) -> typing.Optional[dict[str, str]]:
         """
         Check if the command matches the user's input.
 
@@ -53,15 +53,15 @@ class SessionCommand:
         
         if command == cls.name:
             return match_dict
-        for k, v in cls.aliases.items():
+        for k, v in cls.match_defs.items():
             if command == k:
                 return match_dict
-            if len(command) >= v and command.startswith(k):
+            if len(command) >= v and k.startswith(command):
                 return match_dict
         return None
 
     @classmethod
-    def check_access(cls, session: Session) -> bool:
+    async def check_access(cls, session: Session) -> bool:
         """
         Check if the user should have access to the command.
         If they don't, they don't see it at all.
@@ -96,7 +96,7 @@ class SessionCommand:
     def pc(self) -> PCModel:
         return self.enactor.pc
 
-    def can_execute(self) -> bool:
+    async def can_execute(self) -> bool:
         """
         Check if the command can be executed.
         """
@@ -112,7 +112,7 @@ class SessionCommand:
         Raises:
             HTTPException: If the command cannot be executed.
         """
-        if not self.can_execute():
+        if not await self.can_execute():
             return {"ok": False, "error": "Cannot execute command"}
         try:
             result = await self.func()
@@ -123,7 +123,7 @@ class SessionCommand:
 
     async def func(self) -> dict | None:
         """
-        Execute the command.
+        Execute the command. Overload this.
         """
         pass
 

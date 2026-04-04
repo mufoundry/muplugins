@@ -1,7 +1,7 @@
 from .base import PortalCommand
 from collections import defaultdict
 from httpx import HTTPStatusError
-from ..db.pcs import PCModel
+from ..db.pcs import PCModel, ActiveAs
 from ..db.users import UserModel
 
 from muforge.utils.misc import partial_match
@@ -55,8 +55,10 @@ class Play(_UserCommand):
             await self.send_line("Character not found.")
             return
 
+        active = ActiveAs(user=user, pc=character)
+
         parser_class = self.parser.app.parsers["pc"]
-        parser = parser_class(user, character)
+        parser = parser_class(active)
         await self.connection.push_parser(parser)
     
 

@@ -5,28 +5,28 @@ import io
 import sys
 from typing import Optional
 
+from ..events.messages import RichReplEvent
+from rich.text import Text
+from rich.highlighter import ReprHighlighter
 import rich.syntax
-from rich.console import Console
-
 from ..sessions import SessionParser
 
 
 class REPLParser(SessionParser):
     _INSTRUCTIONS = """[bold cyan]Python REPL[/bold cyan] - Type Python code to execute.
-[yellow]awaits[/yellow] are supported. Use 'exit' or 'quit' to leave.
-[dim]Available: session, parser, core[/dim]"""
+[yellow]awaits[/yellow] are supported. Use 'exit' or 'quit' to leave."""
 
     def __init__(self, session: "Session", developer: bool = False):
         super().__init__(session)
         self._history: list[str] = []
         self._globals: dict = {
-            "parser": self,
-            "sys": sys,
-            "asyncio": asyncio
+            "parser": self
         }
         session.repl_globals(self._globals)
         self._running = False
         self._pending_output = []
+        self._repr_highlighter = ReprHighlighter()
+        self._syntax_theme = "monokai"
 
     async def start(self):
         await self.send_rich(self._INSTRUCTIONS)
@@ -42,7 +42,7 @@ class REPLParser(SessionParser):
 
         stripped = raw.strip()
         if stripped in ("exit", "quit", "q"):
-            await self.send_line(f">>> {raw}")
+            await self.send_event(RichReplEvent(code=raw))
             await self.send_rich("[green]Exiting REPL.[/green]")
             self.session.parser_stack.pop()
             return
@@ -51,8 +51,7 @@ class REPLParser(SessionParser):
         await self._eval(raw)
 
     async def _eval(self, code_str: str):
-        await self.send_line(f">>> {code_str}")
-
+        await self.send_event(RichReplEvent(code=code_str))
         self._pending_output = []
 
         try:
@@ -64,10 +63,15 @@ class REPLParser(SessionParser):
         except Exception as e:
             import traceback
             await self.send_rich(f"[red]{type(e).__name__}:[/red] {e}")
-            await self.send_line(traceback.format_exc())
+            traceback_text = Text(traceback.format_exc())
+            highlighted = self._repr_highlighter(traceback_text)
+            await self.send_rich(highlighted.markup)
 
         if self._pending_output:
-            await self.send_line("".join(self._pending_output))
+            for line in self._pending_output:
+                text = Text(line)
+                highlighted = self._repr_highlighter(text)
+                await self.send_rich(highlighted.markup)
 
         self._trigger_prompt()
 

@@ -205,10 +205,10 @@ class Core(BasePlugin):
         return {"connection": CoreConnection}
 
     def core_events(self) -> dict[str, type]:
-        from .events.messages import RichColumns, RichTextEvent, TextEvent
+        from .events.messages import RichColumns, RichTextEvent, RichReplEvent, TextEvent
         from .events.system import SystemPing
 
-        all_events = [SystemPing, TextEvent, RichTextEvent, RichColumns]
+        all_events = [SystemPing, TextEvent, RichTextEvent, RichReplEvent, RichColumns]
 
         return {ev.event_type(): ev for ev in all_events}
 

@@ -156,7 +156,8 @@ class PCParser(CoreParser):
     async def handle_event(self, event_name: str, event_data: dict):
         if event_class := self.core.events.get(event_name, None):
             event = event_class(**event_data)
-            await event.handle_event(self)
+            await event.handle_event(self.connection)
+            await event.handle_event_parser(self)
         else:
             logger.error(f"Unknown event: {event_name}")
 

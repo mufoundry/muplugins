@@ -5,10 +5,11 @@ import uuid
 import orjson
 from dataclasses import dataclass
 
-from .db.pcs import ActiveAs
+from .db.pcs import ActiveAs 
 from .events.base import EventBase
 from .events.messages import RichTextEvent, TextEvent
 from .events.system import SystemPing
+from rich.text import Text
 
 import typing
 
@@ -44,10 +45,11 @@ class SessionParser:
     async def send_line(self, text: str):
         await self.session.send_line(text)
     
-    async def send_rich(self, text: str):
-        await self.session.send_event(
-            RichTextEvent(text=text)
-        )
+    async def send_rich(self, text: str | Text):
+        await self.session.send_rich(text)
+    
+    async def send_event(self, event: EventBase):
+        await self.session.send_event(event)
 
 class Session:
 
@@ -98,6 +100,12 @@ class Session:
     async def send_text(self, text: str):
         await self.send_event(
             TextEvent(text=text)
+        )
+    
+    async def send_rich(self, text: str | Text):
+        print(text)
+        await self.send_event(
+            RichTextEvent(text=text.markup if isinstance(text, Text) else text)
         )
     
     async def send_line(self, text: str):

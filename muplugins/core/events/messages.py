@@ -30,6 +30,20 @@ class RichTextEvent(EventBase):
     def event_type(cls) -> str:
         return "rich.text"
 
+class RichReplEvent(EventBase):
+    """
+    Event for printing output that came from a REPL. It should use Rich's ReprHighlighter to do syntax highlights.
+    """
+    code: str
+
+    async def handle_event(self, conn: "CoreConnection"):
+        out = conn.print(self.code, highlight=True)
+        await conn.send_text(out)
+
+    @classmethod
+    def event_type(cls) -> str:
+        return "rich.repl"
+
 
 class RichColumns(EventBase):
     padding_min: int = 0

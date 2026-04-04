@@ -8,7 +8,7 @@ class Py(SessionCommand):
     """
     key = "core/python"
     name = "python"
-    aliases = {"python": 2}
+    match_defs = {"python": 2}
     help_category = "Debug"
     min_level = 10
 

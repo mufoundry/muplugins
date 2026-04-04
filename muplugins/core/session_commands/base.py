@@ -50,13 +50,15 @@ class SessionCommand:
         if not match_data:
             return None
         match_dict = {k: v for k, v in match_data.groupdict().items() if v}
+
+        cmd = match_dict.get("cmd", "").lower()
         
-        if command == cls.name:
+        if cmd == cls.name:
             return match_dict
         for k, v in cls.match_defs.items():
-            if command == k:
+            if cmd == k:
                 return match_dict
-            if len(command) >= v and k.startswith(command):
+            if len(cmd) >= v and k.startswith(cmd):
                 return match_dict
         return None
 

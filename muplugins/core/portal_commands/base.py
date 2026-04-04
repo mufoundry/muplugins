@@ -64,7 +64,7 @@ class PortalCommand:
             return None
         match_dict = {k: v for k, v in match_data.groupdict().items() if v}
         
-        cmd = match_dict.get("cmd", "")
+        cmd = match_dict.get("cmd", "").lower()
         for k, v in cls.match_defs.items():
             if cmd == k:
                 return match_dict

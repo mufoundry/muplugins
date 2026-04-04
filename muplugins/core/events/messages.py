@@ -35,9 +35,10 @@ class RichReplEvent(EventBase):
     Event for printing output that came from a REPL. It should use Rich's ReprHighlighter to do syntax highlights.
     """
     code: str
+    prompt: str = ">>>"
 
     async def handle_event(self, conn: "CoreConnection"):
-        out = conn.print(self.code, highlight=True)
+        out = conn.print(f"{self.prompt} {self.code}", highlight=True)
         await conn.send_text(out)
 
     @classmethod

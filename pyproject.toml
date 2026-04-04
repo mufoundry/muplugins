@@ -11,5 +11,6 @@ dependencies = [
     "argon2-cffi",
     "asyncpg",
     "lark",
-    "psutil"
+    "psutil",
+    "aioconsole"
 ]

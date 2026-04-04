@@ -1,5 +1,6 @@
-import ast
 import asyncio
+import code
+import codeop
 import io
 import sys
 from typing import Optional
@@ -8,31 +9,6 @@ import rich.syntax
 from rich.console import Console
 
 from ..sessions import SessionParser
-
-
-class OutputCapture(io.TextIOBase):
-    def __init__(self):
-        self._buffer = io.StringIO()
-
-    def write(self, text: str) -> int:
-        if text:
-            self._buffer.write(text)
-        return len(text)
-
-    def flush(self):
-        pass
-
-    def retrieve(self) -> str:
-        result = self._buffer.getvalue()
-        self._buffer = io.StringIO()
-        return result
-
-    def isatty(self) -> bool:
-        return False
-
-    @property
-    def encoding(self) -> str:
-        return "utf-8"
 
 
 class REPLParser(SessionParser):
@@ -50,6 +26,7 @@ class REPLParser(SessionParser):
         }
         session.repl_globals(self._globals)
         self._running = False
+        self._pending_output = []
 
     async def start(self):
         await self.send_rich(self._INSTRUCTIONS)
@@ -65,6 +42,7 @@ class REPLParser(SessionParser):
 
         stripped = raw.strip()
         if stripped in ("exit", "quit", "q"):
+            await self.send_line(f">>> {raw}")
             await self.send_rich("[green]Exiting REPL.[/green]")
             self.session.parser_stack.pop()
             return
@@ -72,47 +50,57 @@ class REPLParser(SessionParser):
         self._history.append(raw)
         await self._eval(raw)
 
-    async def _eval(self, code: str):
-        stdout_capture = OutputCapture()
-        stderr_capture = OutputCapture()
+    async def _eval(self, code_str: str):
+        await self.send_line(f">>> {code_str}")
 
-        old_stdout, old_stderr = sys.stdout, sys.stderr
-        sys.stdout, sys.stderr = stdout_capture, stderr_capture
+        self._pending_output = []
 
         try:
-            tree = ast.parse(code)
-            has_await = any(isinstance(n, ast.Await) for n in ast.walk(tree))
-
-            if has_await:
-                wrapped = f"async def _repl():\n{self._indent(code)}"
-                
-                exec(wrapped, self._globals)
-                result = await self._globals["_repl"]()
-            else:
-                result = exec(code, self._globals)
-
-            if result is not None:
-                await self.send_line(repr(result))
-
+            more = await self._runsource(code_str)
+            if more:
+                await self.send_rich("[yellow]Incomplete input[/yellow]")
         except SyntaxError as e:
-            if "incomplete" in str(e).lower():
-                self._trigger_prompt()
-                return
             await self.send_rich(f"[red]SyntaxError:[/red] {e}")
         except Exception as e:
+            import traceback
             await self.send_rich(f"[red]{type(e).__name__}:[/red] {e}")
-        finally:
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
-        
-        cap_out = stdout_capture.retrieve()
-        if cap_out:
-            await self.send_line(cap_out)
-        cap_err = stderr_capture.retrieve()
-        if cap_err:
-            await self.send_line(cap_err)
+            await self.send_line(traceback.format_exc())
+
+        if self._pending_output:
+            await self.send_line("".join(self._pending_output))
 
         self._trigger_prompt()
+
+    async def _runsource(self, source: str) -> bool:
+        """Compile and run source code, returning True if more input needed."""
+        import ast
+        from aioconsole import execute
+
+        try:
+            compiled = execute.compile_for_aexec(source, "<repl>", "single")
+        except (SyntaxError, ValueError) as e:
+            await self.send_rich(f"[red]SyntaxError:[/red] {e}")
+            return False
+
+        if compiled is None:
+            return True
+
+        for tree in compiled:
+            coro = execute.make_coroutine_from_tree(tree, "<repl>", local=self._globals)
+            try:
+                result, new_locals = await coro
+            except Exception as e:
+                import traceback
+                self._pending_output.append(traceback.format_exc())
+                return False
+
+            if isinstance(tree, ast.Interactive):
+                if result is not None:
+                    self._pending_output.append(repr(result) + "\n")
+
+            self._globals.update(new_locals)
+
+        return False
 
     def _prompt(self):
         pass

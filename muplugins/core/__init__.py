@@ -260,8 +260,8 @@ class Core(BasePlugin):
 
     def portal_commands(self) -> list["PortalCommand"]:
         out = list()
-        from .portal_commands.universal import Help, MSSP, Quit
-        out.extend([Help, MSSP, Quit])
+        from .portal_commands.universal import PortalHelp, MSSP, Quit
+        out.extend([PortalHelp, MSSP, Quit])
 
         from .portal_commands.auth import Login, Register
         out.extend([Login, Register])

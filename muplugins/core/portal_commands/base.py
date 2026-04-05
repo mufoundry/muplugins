@@ -23,6 +23,14 @@ class PortalCommand:
     help_name = None
     # If help_category or help_name is None, the command will not be listed in the help system.
     help_category = None
+
+    # A short description of the command for the short help listing.
+    short_syntax = "???"
+    short_help = "No help available for this command."
+    # priority for short help listing. Higher goes first.
+    short_priority = 0
+    
+    # Normal priority for command matching. Higher goes first.
     priority = 0
     # Match_defs are a dictionary of full_command->minchars
     # For instance north->n

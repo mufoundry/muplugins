@@ -13,7 +13,10 @@ class UniversalCommand(PortalCommand):
 
 class Quit(UniversalCommand):
     key = "core/quit"
-    help_name = "quit"
+    help_name = "QUIT"
+    short_syntax = "QUIT"
+    short_help = "Quit the game."
+    short_priority = -100
     help_category = "System"
     match_defs = {"quit": 4}
 
@@ -36,11 +39,14 @@ class Quit(UniversalCommand):
     async def send_goodbye(self):
         await self.send_line("Goodbye!")
 
-class Help(UniversalCommand):
-    key = "core/help"
-    help_name = "help"
+class PortalHelp(UniversalCommand):
+    key = "core/phelp"
+    help_name = "phelp"
     help_category = "General"
-    match_defs = {"help": 1, "?": 1}
+    short_syntax = "phelp [command]"
+    short_help = "Display help information about available portal commands."
+    short_priority = -50
+    match_defs = {"phelp": 2}
 
     async def func(self):
         if not (args := self.parsed.get("args", "")):
@@ -52,7 +58,7 @@ class Help(UniversalCommand):
         await self.send_line(f"Command not found: {file_name}")
 
     async def display_file(self, file_name: str):
-        commands = self.parser.available_commands().values()
+        commands = self.parser.available_commands()
         if not (command := partial_match(file_name, commands, key=lambda c: c.name)):
             await self.handle_unknown(file_name)
             return
@@ -60,8 +66,10 @@ class Help(UniversalCommand):
 
     async def display_full_help(self):
         categories = defaultdict(list)
-        commands = self.parser.available_commands().values()
+        commands = self.parser.available_commands()
         for command in commands:
+            if not command.help_category and command.help_name:
+                continue
             categories[command.help_category].append(command)
 
         category_keys = sorted(categories.keys())
@@ -69,16 +77,18 @@ class Help(UniversalCommand):
 
         for key in category_keys:
             commands = categories[key]
-            commands.sort(key=lambda cmd: cmd.name)
-            cmds = [cmd.name for cmd in commands]
+            commands.sort(key=lambda cmd: cmd.help_name)
+            cmds = [cmd.help_name for cmd in commands]
             column_message.data.append((key, cmds))
         await self.send_event(column_message)
 
-
 class MSSP(UniversalCommand):
     key = "core/mssp"
-    help_name = "info"
+    help_name = "mssp"
     help_category = "System"
+    short_syntax = "mssp"
+    short_help = "Display information about the MUD."
+    short_priority = -40
     match_defs = {"mssp": 2}
 
     async def func(self):
@@ -90,3 +100,4 @@ class MSSP(UniversalCommand):
         
         rendered = "\r\n".join([f"{k}: {v}" for k, v in data])
         await self.send_line(rendered)
+    

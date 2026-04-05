@@ -15,6 +15,9 @@ class Create(_UserCommand):
     key = "core/user/create"
     name = "create"
     help_category = "User"
+    short_syntax = "create <character name>"
+    short_help = "Create a new character."
+    short_priority = 0
     match_defs = {"create": 1}
 
     async def func(self):
@@ -40,6 +43,10 @@ class Play(_UserCommand):
     name = "play"
     help_category = "User"
     match_defs = {"play": 1}
+
+    short_help = "Play an existing character."
+    short_syntax = "play <character name>"
+    short_priority = 10
 
     async def func(self):
         if not (args := self.parsed.get("args", "")):
@@ -67,6 +74,9 @@ class Logout(_UserCommand):
     name = "logout"
     help_category = "User"
     match_defs = {"logout": 3, "exit": 1}
+    short_help = "Logout of the game."
+    short_syntax = "logout"
+    short_priority = -10
 
     async def func(self):
         self.connection.jwt = None

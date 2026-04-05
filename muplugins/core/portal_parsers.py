@@ -24,6 +24,15 @@ class CoreParser(BaseParser):
                 if c.check_parser(self) and c.check_access(self):
                     yield c
 
+    async def display_short_help(self):
+        commands = sorted(self.available_commands(), key=lambda c: c.short_priority, reverse=True)
+        help_table = self.make_table("Command", "Description", title="Available Commands")
+        for command in commands:
+            if not command.short_syntax:
+                continue
+            help_table.add_row(command.short_syntax or command.name, command.short_help)
+        await self.send_rich(help_table)
+
     async def handle_command(self, command: str):
         found = None
         for cmd_class in self.available_commands():
@@ -73,19 +82,10 @@ class AuthParser(CoreParser):
             f"Welcome to {self.app.complete_settings['MUFORGE'].get('name', 'MuForge')}!"
         )
 
-    async def display_welcome_commands(self):
-        help_table = self.make_table("Command", "Description")
-        help_table.add_row("register <email>=<password>", "Register a new account.")
-        help_table.add_row("login <email>=<password>", "Login to an existing account.")
-        help_table.add_row("info", "Display game information. (Same as MSSP)")
-        help_table.add_row("help", "Display more information about available commands.")
-        help_table.add_row("quit", "Disconnect from the game.")
-        await self.send_rich(help_table)
-
     async def show_welcome(self):
         await self.display_welcome_logo()
         await self.display_welcome_text()
-        await self.display_welcome_commands()
+        await self.display_short_help()
 
     async def on_start(self):
         await self.show_welcome()
@@ -98,16 +98,6 @@ class UserParser(CoreParser):
 
     async def on_start(self):
         await self.handle_look()
-    
-    def generate_help(self) -> str:
-        help_table = self.make_table("Command", "Description", title="User Commands")
-        help_table.add_row("help", "Displays help menu.")
-        help_table.add_row("create <name>", "Creates a new character.")
-        help_table.add_row("play <name>", "Selects a character to play.")
-        #help_table.add_row("delete <name>", "Deletes a character.")
-        help_table.add_row("logout", "Logs out of the game.")
-        #help_table.add_row("look", "Lists all characters.")
-        return help_table
 
 
     async def handle_look(self):
@@ -120,8 +110,7 @@ class UserParser(CoreParser):
         for character in characters:
             character_table.add_row(character.name, str(character.last_active_at))
         await self.send_rich(character_table)
-        help_text = self.generate_help()
-        await self.send_rich(help_text)
+        await self.display_short_help()
 
 class PCParser(CoreParser):
     parser_type = "pc"

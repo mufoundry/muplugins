@@ -356,7 +356,12 @@ class MudTelnetProtocol:
         # pass it through any applicable transformations. This is probably only MCCP2.
         for op in self._out_transformers:
             encoded = await op.transform_outgoing_data(encoded)
-        # return the encoded data.
+        
+        match data:
+            case TelnetSubNegotiate():
+                if op := self._tn_options.get(data.option, None):
+                    await op.at_send_subnegotiate(data.data)
+
         await self._tn_out_queue.put(encoded)
 
     async def send_line(self, text: str):

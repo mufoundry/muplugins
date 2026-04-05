@@ -10,8 +10,10 @@ class _AuthCommand(PortalCommand):
 
 class Register(_AuthCommand):
     key = "core/auth/register"
-    name = "register"
+    help_name = "register"
     help_category = "Authentication"
+    short_syntax = "register <email>=<password>"
+    short_help = "Register a new account."
     parser_types = {"auth"}
     match_defs = {"register": 1}
 
@@ -46,6 +48,9 @@ class Register(_AuthCommand):
 class Login(_AuthCommand):
     key = "core/auth/login"
     help_name = "login"
+    short_syntax = "login <email>=<password>"
+    short_help = "Login to an existing account."
+    short_priority = 20
     match_defs = {"login": 1}
 
     async def func(self):

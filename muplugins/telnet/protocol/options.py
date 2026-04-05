@@ -421,6 +421,7 @@ class MCCP2Option(TelnetOption):
             await self.protocol.change_capabilities({"mccp2_enabled": True})
             self.protocol._out_transformers.append(self)
             self.compressor = zlib.compressobj(9)
+            self.mccp2_enabled = True
 
     async def at_local_enable(self):
         await self.protocol.change_capabilities({"mccp2": True})

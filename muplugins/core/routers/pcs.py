@@ -1,8 +1,11 @@
 import typing
 import uuid
+import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+import jwt
+import orjson
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from muforge.utils.responses import streaming_list
 from pydantic import BaseModel
@@ -73,9 +76,7 @@ async def stream_character_events(
                 await session.start()
             # blocks until a new event
             while item := await queue.get():
-                ev_class = item.__class__
-                ev_name = core.events_reversed.get(ev_class)
-                yield f"event: {ev_name}\ndata: {item.model_dump_json()}\n\n"
+                yield f"event: {item.event_type()}\ndata: {item.model_dump_json()}\n\n"
             graceful = True
         finally:
             await session.unsubscribe(id)
@@ -84,9 +85,110 @@ async def stream_character_events(
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-
 class CommandSubmission(BaseModel):
     command: str
+
+@router.websocket("/{character_id}/session")
+async def websocket_session(
+    websocket: WebSocket,
+    character_id: uuid.UUID,
+    token: str | None = None,
+):
+    # Manual token validation since OAuth2PasswordBearer doesn't work with WebSockets
+    if not token:
+        token = websocket.query_params.get("token")
+        if not token:
+            await websocket.close(code=4001, reason="Missing token")
+            return
+    
+    request = websocket
+
+    core = request.app.state.core
+    jwt_manager = core.jwt_manager
+    jwt_settings = jwt_manager.jwt_settings
+    try:
+        payload = jwt.decode(token, jwt_settings["secret"], algorithms=[jwt_settings["algorithm"]])
+        user_id = payload.get("sub", None)
+        if user_id is None:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+    except jwt.PyJWTError as e:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
+
+    db = core.db
+    async with db.connection() as conn:
+        user_row = await conn.fetchrow("SELECT * FROM users WHERE id = $1", user_id)
+    if user_row is None:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
+
+    user = UserModel(**user_row)
+    acting = await get_acting_pc(request, user, character_id)
+
+    await websocket.accept()
+
+    should_start = False
+    if not (session := core.active_sessions.get(character_id, None)):
+        session_class = core.app.classes["session"]
+        session = session_class(core, acting)
+        core.active_sessions[character_id] = session
+        should_start = True
+    
+    shutdown_event = asyncio.Event()
+    shutdown_reason = None
+
+    id, queue = await session.subscribe(request)
+    graceful = False
+
+    async def run_receive():
+        """
+        Receive events from client, submit as commands to session.
+        """
+        try:
+            while True:
+                received = await websocket.receive_bytes()
+                if not received:
+                    continue
+                data = orjson.loads(received)
+                command = data.get("command", None)
+                if command is not None:
+                    res = await session.execute_command(command)
+                    if isinstance(res, dict):
+                        await websocket.send_json({"response": res})
+        except WebSocketDisconnect:
+            shutdown_reason = "client_disconnect"
+            shutdown_event.set()
+    
+    class EventSend(BaseModel):
+        event: str
+        data: dict
+
+    async def run_send():
+        """
+        Read queue, send events to client.
+        """
+        try:
+            while item := await queue.get():
+                send = EventSend(event=item.event_type(), data=item.model_dump())
+                dumped = send.model_dump_json()
+                await websocket.send_bytes(dumped.encode())
+        except asyncio.CancelledError:
+            pass
+    
+
+    if should_start:
+        await session.start()
+
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(run_receive())
+        tg.create_task(run_send())
+
+        await shutdown_event.wait()
+
+    await session.unsubscribe(id)
+    if not session.subscriptions and session.active:
+        await session.stop(graceful=graceful)
 
 
 @router.post("/{character_id}/command")

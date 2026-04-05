@@ -3,8 +3,13 @@ from .db.pcs import PCModel, ActiveAs
 from .db.users import UserModel
 import uuid
 import asyncio
+import orjson
+import ssl
 
 from httpx import HTTPStatusError
+from httpx_ws import AsyncWebSocketClient
+from websockets.asyncio.client import connect
+
 from loguru import logger
 from rich.errors import MarkupError
 from rich.markup import escape
@@ -122,6 +127,7 @@ class PCParser(CoreParser):
         self.client = None
         self.stream_task = None
         self.sid = None
+        self.ws = None
 
     @property
     def character(self) -> PCModel:
@@ -151,6 +157,25 @@ class PCParser(CoreParser):
             logger.error(f"Unknown event: {event_name}")
 
     async def stream_updates(self):
+        headers = self.connection.get_headers()
+        base_url = str(self.connection.client.base_url).replace("http", "ws")
+        url = f"{base_url}/v1/pcs/{self.character.id}/session?token={self.connection.jwt}"
+
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        async with connect(uri=url, additional_headers=headers, ssl=ssl_context) as ws:
+            self.ws = ws
+
+            while msg := await ws.recv():
+                data = orjson.loads(msg)
+                event_name = data.get("event", None)
+                event_data = data.get("data", None)
+                if event_name and event_data:
+                    await self.handle_event(event_name, event_data)
+
+    async def old_stream_updates(self):
         disconnects: int = 0
         while True:
             try:
@@ -179,8 +204,10 @@ class PCParser(CoreParser):
                 disconnects += 1
                 return
 
-
     async def handle_no_match(self, command: str):
+        await self.ws.send(orjson.dumps({"command": command}), text=False)
+
+    async def old_handle_no_match(self, command: str):
         """
         Relay the command to the game engine.
         """

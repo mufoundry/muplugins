@@ -15,6 +15,8 @@ from .database import INIT_SQL, Database
 from .jwt import JWTManager
 from .sessions import Session
 
+if typing.TYPE_CHECKING:
+    from fastapi import FastAPI
 
 def decode_json(data: bytes):
     decoded = orjson.loads(data)
@@ -219,6 +221,9 @@ class Core(BasePlugin):
             self.events.update(p.core_events())
         for k, v in self.events.items():
             self.events_reversed[v] = k
+    
+    async def setup_fastapi(self, instance: FastAPI):
+        instance.state.core = self
 
     async def setup_final(self, app_name: str):
         await self.setup_events()
@@ -226,12 +231,12 @@ class Core(BasePlugin):
 
         match app_name:
             case "game":
-                self.app.fastapi_instance.state.core = self
-                
                 await self.setup_crypt()
                 await self.setup_database()
                 await self.setup_lockfuncs()
                 await self.setup_session_commands()
+
+
             case "portal":
                 await self.setup_portal_commands()
 

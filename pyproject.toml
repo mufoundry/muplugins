@@ -12,5 +12,6 @@ dependencies = [
     "asyncpg",
     "lark",
     "psutil",
-    "aioconsole"
+    "aioconsole",
+    "httpx-ws"
 ]

@@ -94,8 +94,8 @@ class Session:
             await sub.queue.put(event)
 
     def send_event_nowait(self, event: EventBase) -> None:
-        for q in self.subscriptions:
-            q.put_nowait(event)
+        for sub in self.subscriptions.values():
+            sub.queue.put_nowait(event)
     
     async def send_text(self, text: str):
         await self.send_event(

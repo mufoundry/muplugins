@@ -76,7 +76,7 @@ class CoreConnection(BaseConnection):
                     # this is bad. we somehow missed the expiry time.
                     # we should probably log this and then cancel the connection.
                     await self.send_line(
-                        "Your session has unrecoverably expired. Please log in again."
+                        "Your session has unrecoverably expired. Expiry has passed. Please log in again."
                     )
                     self.shutdown_cause = "session_expired"
                     self.shutdown_event.set()
@@ -90,12 +90,12 @@ class CoreConnection(BaseConnection):
                 try:
                     json_data = await self.api_call(
                         "POST",
-                        "/auth/refresh",
+                        "/v1/auth/refresh",
                         json={"refresh_token": self.refresh_token},
                     )
                 except HTTPStatusError as e:
                     await self.send_line(
-                        "Your session has unrecoverably expired. Please log in again."
+                        "Your session has unrecoverably expired. Refresh operation failed. Please log in again."
                     )
                     self.shutdown_cause = "session_expired"
                     self.shutdown_event.set()

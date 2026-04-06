@@ -7,7 +7,6 @@ import orjson
 import ssl
 
 from httpx import HTTPStatusError
-from httpx_ws import AsyncWebSocketClient
 from websockets.asyncio.client import connect
 
 from loguru import logger

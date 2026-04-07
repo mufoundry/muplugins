@@ -170,7 +170,9 @@ async def websocket_session(
         """
         try:
             while item := await queue.get():
-                send = EventSend(event=item.event_type(), data=item.model_dump())
+                ev_type = item.event_type()
+                to_dict = item.model_dump()
+                send = EventSend(event=ev_type, data=to_dict)
                 dumped = send.model_dump_json()
                 await websocket.send_bytes(dumped.encode())
         except asyncio.CancelledError:
